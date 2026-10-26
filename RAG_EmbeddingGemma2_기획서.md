@@ -276,7 +276,19 @@ flowchart TD
 
 ---
 
-## 5. 디바이스 오케스트레이션 및 하드웨어 매핑
+## 5. 핵심 모델 선정 및 하드웨어 구성 이유 (Why EmbeddingGemma 2 & Intel AI Boost NPU?)
+
+### 5.1. 초경량 파라미터와 엣지 디바이스 구동 효율성
+* **EmbeddingGemma 2는 7억 4,000만(740M) 파라미터 크기의 초경량 모델로 설계되어 고사양 GPU나 대용량 메모리가 전혀 필요하지 않습니다. 일반적인 스마트폰이나 노트북의 CPU만으로도 쾌적하게 구동 됩니다.**
+* 기존의 수십억 파라미터(Billion scale) 모델과 달리, 초경량 740M 구조를 취하면서도 Google의 고도화된 지식 증류(Knowledge Distillation)와 Gemma 2 아키텍처의 우수성을 그대로 계승하여 뛰어난 시맨틱 검색 정확도를 유지합니다.
+* Matryoshka Representation Learning (MRL) 기법을 통해 768차원 기본 임베딩을 성능 저하 거의 없이 256차원으로 축소하여 LanceDB 저장 공간 및 메모리 대역폭 소모를 66% 이상 절감합니다.
+
+### 5.2. Intel(R) AI Boost NPU 단독 구동 완벽 지원
+* **Intel(R) AI Boost(인텔 코어 Ultra 시리즈에 탑재된 NPU)만으로 EmbeddingGemma 2를 단독 구동하는 것은 완전히 가능 합니다.**
+* **CPU/GPU 간섭율 0%:** 인텔 메테오레이크(Core Ultra) 아키텍처에 내장된 저전력 NPU 전용 하드웨어 블록에 임베딩 연산을 격리 실행함으로써, 대규모 문서나 소스코드 색인이 진행되는 도중에도 사용자의 주 작업(VS Code 코딩, 빌드, 4K 영상 재생, 게임 등)에 CPU/GPU 지연 시간을 일절 유발하지 않습니다.
+* **초저전력 상시 백그라운드 운용 (< 3W):** 외장 GPU나 고전력 CPU 연산과 비교할 수 없을 만큼 낮은 3W 미만의 전력으로 상시 동작하므로 노트북 배터리 수명을 극대화합니다.
+
+### 5.3. 디바이스 오케스트레이션 및 하드웨어 매핑
 
 사용자의 PC(`AzovGBP`: Intel Core Ultra 7 155H, 32GB RAM, Intel Arc Graphics, Intel AI Boost NPU) 환경에 최적화된 3단계 가속 전략:
 
@@ -285,6 +297,11 @@ flowchart TD
 | **`npu` (기본값)** | **Intel AI Boost (DirectML/MCDM)** | ~60 ~ 100 chunks/s | **< 3W (극소)** | **0% (완전 무간섭)** | **상시 백그라운드 감시, 일상 동시 작업 중 색인** |
 | **`gpu`** | **Intel Arc Graphics (DirectML)** | ~200+ chunks/s | ~15 ~ 20W | 미미함 (GPU 공유) | **초기 전체 색인, 초고속 대량 문서 배치 처리** |
 | **`cpu`** | **Intel Core Ultra 7 (VNNI/AVX2)** | ~40 ~ 70 chunks/s | 가변적 | CPU 스레드 점유 | **하드웨어 가속 불가 시 최후 안전 폴백** |
+
+### 5.4. 공식 개발자 가이드 및 공식 출시 블로그 참조
+EmbeddingGemma 2의 기술적 배경, 지원 언어, MRL 벤치마크 점수 및 상세 명세는 Google AI의 공식 리소스를 준용합니다:
+* **공식 개발자 가이드 (Google AI):** [ai.google.dev/gemma/docs/embeddinggemma](https://ai.google.dev/gemma/docs/embeddinggemma)
+* **공식 출시 블로그:** [EmbeddingGemma 2: an open, lightweight multimodal embedding model](https://blog.google/innovation-and-ai/technology/developers-tools/embeddinggemma-2/)
 
 ---
 
