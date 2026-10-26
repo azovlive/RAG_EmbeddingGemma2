@@ -384,8 +384,10 @@ impl NpuEngine {
         if let Some(ref sess) = *session_guard {
             unsafe {
                 let mut list_ptr = sess.h_list;
-                let _ = (sess.pfn_exec)(sess.h_queue, 1, &mut list_ptr, std::ptr::null_mut());
-                let _ = (sess.pfn_sync)(sess.h_queue, 20_000_000); // 20ms sync
+                for _ in 0..2 {
+                    let _ = (sess.pfn_exec)(sess.h_queue, 1, &mut list_ptr, std::ptr::null_mut());
+                    let _ = (sess.pfn_sync)(sess.h_queue, 25_000_000); // 25ms hardware queue sync
+                }
             }
         }
     }

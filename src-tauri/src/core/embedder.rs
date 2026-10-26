@@ -89,6 +89,9 @@ mod tests {
     #[tokio::test]
     async fn test_embedding_normalization() {
         let embedder = Embedder::new("npu", 256);
+        println!(">>> NPU available: {}", embedder.npu_engine.is_npu_available());
+        embedder.npu_engine.dispatch_npu_compute(100, 256);
+        println!(">>> dispatch_npu_compute succeeded!");
         let vec = embedder.embed("test query").await.unwrap();
         assert_eq!(vec.len(), 256);
 

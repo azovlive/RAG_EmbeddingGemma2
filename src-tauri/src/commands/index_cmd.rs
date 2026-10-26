@@ -29,7 +29,9 @@ pub async fn trigger_indexing(
         if !force_reindex {
             return Ok(());
         }
-        return Err("현재 다른 색인 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.".to_string());
+        // If force re-index is requested while another index is running, cleanly cancel the previous one first
+        state.indexer.cancel();
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
     }
 
     let indexer = state.indexer.clone();
@@ -103,6 +105,14 @@ pub async fn get_indexing_state(
         is_paused,
         total_chunks: state.db.get_total_chunks().await,
     })
+}
+
+#[tauri::command]
+pub async fn get_indexing_progress(
+    state: State<'_, Arc<AppState>>,
+) -> Result<IndexProgress, String> {
+    let prog = state.indexer.current_progress.read().await.clone();
+    Ok(prog)
 }
 
 #[tauri::command]

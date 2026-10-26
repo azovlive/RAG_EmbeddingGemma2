@@ -17,11 +17,23 @@ use super::resource_governor::ResourceGovernor;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexProgress {
+    #[serde(default)]
+    pub stage: String, // "idle", "initializing", "scanning", "indexing", "complete"
     pub current_file: String,
     pub processed_files: usize,
     pub total_files: usize,
     pub percent: f32,
     pub is_paused: bool,
+    #[serde(default)]
+    pub is_running: bool,
+}
+
+struct IndexRunGuard(Arc<AtomicBool>, Arc<AtomicBool>);
+impl Drop for IndexRunGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+        self.1.store(false, Ordering::SeqCst);
+    }
 }
 
 pub struct Indexer {
@@ -32,6 +44,7 @@ pub struct Indexer {
     pub is_paused: Arc<AtomicBool>,
     pub is_running: Arc<AtomicBool>,
     pub is_cancelled: Arc<AtomicBool>,
+    pub current_progress: Arc<tokio::sync::RwLock<IndexProgress>>,
 }
 
 impl Indexer {
@@ -49,6 +62,15 @@ impl Indexer {
             is_paused: Arc::new(AtomicBool::new(false)),
             is_running: Arc::new(AtomicBool::new(false)),
             is_cancelled: Arc::new(AtomicBool::new(false)),
+            current_progress: Arc::new(tokio::sync::RwLock::new(IndexProgress {
+                stage: "idle".to_string(),
+                current_file: "".to_string(),
+                processed_files: 0,
+                total_files: 0,
+                percent: 0.0,
+                is_paused: false,
+                is_running: false,
+            })),
         }
     }
 
@@ -73,18 +95,46 @@ impl Indexer {
         self.is_running.load(Ordering::SeqCst)
     }
 
+    pub async fn update_progress(
+        &self,
+        tx: &Option<mpsc::Sender<IndexProgress>>,
+        prog: IndexProgress,
+    ) {
+        {
+            let mut lock = self.current_progress.write().await;
+            *lock = prog.clone();
+        }
+        if let Some(ref sender) = tx {
+            let _ = sender.send(prog).await;
+        }
+    }
+
     pub async fn index_all(
         &self,
         target_folder: Option<String>,
         force: bool,
         progress_tx: Option<mpsc::Sender<IndexProgress>>,
     ) -> Result<usize> {
+        let _guard = IndexRunGuard(self.is_running.clone(), self.is_paused.clone());
         self.is_running.store(true, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
         self.is_cancelled.store(false, Ordering::SeqCst);
 
-        // If force re-index, clear corresponding DB chunks first
+        // Stage 1: If force re-index, clear database first and notify UI
         if force {
+            self.update_progress(
+                &progress_tx,
+                IndexProgress {
+                    stage: "initializing".to_string(),
+                    current_file: "기존 색인 데이터 초기화 중...".to_string(),
+                    processed_files: 0,
+                    total_files: 0,
+                    percent: 0.0,
+                    is_paused: false,
+                    is_running: true,
+                },
+            ).await;
+
             if let Some(ref folder) = target_folder {
                 let norm = normalize_path_for_query(Path::new(folder));
                 let _ = self.db.clear_folder(&norm).await;
@@ -93,10 +143,23 @@ impl Indexer {
             }
         }
 
-        let conf = self.config.read().await.clone();
-        let mut all_files = Vec::new();
+        // Stage 2: Target File Discovery (walkdir)
+        self.update_progress(
+            &progress_tx,
+            IndexProgress {
+                stage: "scanning".to_string(),
+                current_file: "색인 대상 파일 탐색 중...".to_string(),
+                processed_files: 0,
+                total_files: 0,
+                percent: 0.0,
+                is_paused: false,
+                is_running: true,
+            },
+        ).await;
 
-        // 1. Collect all target files
+        let conf = self.config.read().await.clone();
+        let mut candidate_files = Vec::new();
+
         let search_dirs: Vec<std::path::PathBuf> = if let Some(ref folder) = target_folder {
             vec![std::path::PathBuf::from(folder)]
         } else {
@@ -135,102 +198,151 @@ impl Indexer {
                         continue;
                     }
 
-                    all_files.push(path);
+                    candidate_files.push(path);
                 }
             }
         }
 
-        let total = all_files.len();
+        // Stage 3: Filtering (Determine which files actually need indexing)
+        let mut files_to_index = Vec::new();
 
-        // Send initial progress immediately so UI updates with 0% right away
-        if let Some(ref tx) = progress_tx {
-            let _ = tx.send(IndexProgress {
-                current_file: if total > 0 { "색인 시작 중...".to_string() } else { "색인 대상 파일 없음 (0개)".to_string() },
+        if force {
+            files_to_index = candidate_files;
+        } else {
+            for path in candidate_files {
+                if self.is_cancelled.load(Ordering::SeqCst) {
+                    return Ok(0);
+                }
+                let normalized = normalize_path_for_query(&path);
+                if let Some(existing_hash) = self.db.get_existing_hash(&normalized).await {
+                    if let Ok(content_bytes) = std::fs::read(&path) {
+                        let file_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&content_bytes));
+                        if existing_hash == file_hash {
+                            continue; // File already indexed and up-to-date
+                        }
+                    }
+                }
+                files_to_index.push(path);
+            }
+        }
+
+        let total = files_to_index.len();
+
+        // If 0 files need indexing, finish cleanly and inform UI immediately
+        if total == 0 {
+            self.update_progress(
+                &progress_tx,
+                IndexProgress {
+                    stage: "complete".to_string(),
+                    current_file: "모든 파일이 최신 상태입니다 (색인 대상 0개)".to_string(),
+                    processed_files: 0,
+                    total_files: 0,
+                    percent: 100.0,
+                    is_paused: false,
+                    is_running: false,
+                },
+            ).await;
+            return Ok(0);
+        }
+
+        // Stage 4: Actual File Indexing & Embedding with NPU
+        self.update_progress(
+            &progress_tx,
+            IndexProgress {
+                stage: "indexing".to_string(),
+                current_file: format!("총 {}개 대상 파일 색인 시작...", total),
                 processed_files: 0,
                 total_files: total,
                 percent: 0.0,
                 is_paused: false,
-            }).await;
-        }
+                is_running: true,
+            },
+        ).await;
 
-        // If 0 files found, finish cleanly
-        if total == 0 {
-            self.is_running.store(false, Ordering::SeqCst);
-            self.is_paused.store(false, Ordering::SeqCst);
-            return Ok(0);
-        }
-
-        // 2. Process files with Read-Only guarantee & Resource Governor
-        for (idx, file_path) in all_files.into_iter().enumerate() {
+        for (idx, file_path) in files_to_index.into_iter().enumerate() {
             // Check User Cancel
             if self.is_cancelled.load(Ordering::SeqCst) {
                 tracing::info!("Indexing cancelled by user at file {}/{}", idx, total);
-                self.is_running.store(false, Ordering::SeqCst);
-                self.is_paused.store(false, Ordering::SeqCst);
-                self.is_cancelled.store(false, Ordering::SeqCst);
                 let _ = self.db.persist().await;
+                self.update_progress(
+                    &progress_tx,
+                    IndexProgress {
+                        stage: "idle".to_string(),
+                        current_file: "색인 작업이 취소되었습니다.".to_string(),
+                        processed_files: idx,
+                        total_files: total,
+                        percent: if total > 0 { (idx as f32 / total as f32) * 100.0 } else { 100.0 },
+                        is_paused: false,
+                        is_running: false,
+                    },
+                ).await;
                 return Ok(idx);
             }
 
             // Check User Manual Pause
             while self.is_paused.load(Ordering::SeqCst) {
                 if self.is_cancelled.load(Ordering::SeqCst) {
-                    self.is_running.store(false, Ordering::SeqCst);
-                    self.is_paused.store(false, Ordering::SeqCst);
-                    self.is_cancelled.store(false, Ordering::SeqCst);
                     let _ = self.db.persist().await;
                     return Ok(idx);
                 }
-                if let Some(ref tx) = progress_tx {
-                    let _ = tx.send(IndexProgress {
+                self.update_progress(
+                    &progress_tx,
+                    IndexProgress {
+                        stage: "indexing".to_string(),
                         current_file: file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
                         processed_files: idx,
                         total_files: total,
                         percent: if total > 0 { (idx as f32 / total as f32) * 100.0 } else { 100.0 },
                         is_paused: true,
-                    }).await;
-                }
+                        is_running: true,
+                    },
+                ).await;
                 tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
             }
 
             // Check Resource Governor
             let (_, _, should_pause) = self.governor.check_system().await;
             if should_pause {
-                if let Some(ref tx) = progress_tx {
-                    let _ = tx.send(IndexProgress {
-                        current_file: file_path.to_string_lossy().to_string(),
-                        processed_files: idx,
-                        total_files: total,
-                        percent: if total > 0 { (idx as f32 / total as f32) * 100.0 } else { 100.0 },
-                        is_paused: true,
-                    }).await;
-                }
-                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
             }
 
+            let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
             let _ = self.index_single_file(&file_path, force).await;
 
-            // Batch persist every 20 files to prevent disk write bottlenecks
-            if (idx + 1) % 20 == 0 {
+            // Batch persist every 25 files to avoid disk contention
+            if (idx + 1) % 25 == 0 {
                 let _ = self.db.persist().await;
             }
 
-            if let Some(ref tx) = progress_tx {
-                let _ = tx.send(IndexProgress {
-                    current_file: file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
+            self.update_progress(
+                &progress_tx,
+                IndexProgress {
+                    stage: "indexing".to_string(),
+                    current_file: file_name,
                     processed_files: idx + 1,
                     total_files: total,
                     percent: if total > 0 { ((idx + 1) as f32 / total as f32) * 100.0 } else { 100.0 },
                     is_paused: false,
-                }).await;
-            }
+                    is_running: true,
+                },
+            ).await;
         }
 
         // Final persist of all accumulated chunks
         let _ = self.db.persist().await;
 
-        self.is_running.store(false, Ordering::SeqCst);
-        self.is_paused.store(false, Ordering::SeqCst);
+        self.update_progress(
+            &progress_tx,
+            IndexProgress {
+                stage: "complete".to_string(),
+                current_file: format!("총 {}개 파일 색인 완료", total),
+                processed_files: total,
+                total_files: total,
+                percent: 100.0,
+                is_paused: false,
+                is_running: false,
+            },
+        ).await;
 
         Ok(total)
     }
@@ -384,9 +496,17 @@ impl Indexer {
             }
         };
 
-        if chunks.is_empty() {
-            return Ok(());
-        }
+        let chunks = if chunks.is_empty() {
+            vec![super::code_chunker::CodeChunk {
+                start_line: 1,
+                end_line: 1,
+                symbol: format!("[빈 문서] {file_name}"),
+                content: format!("[비어 있는 문서: {file_name}]\n형식: {}\n경로: {display_path}", ext.to_uppercase()),
+                lang: ext.clone(),
+            }]
+        } else {
+            chunks
+        };
 
         // Prepare 14-column database chunks
         let mut db_chunks = Vec::new();
@@ -417,3 +537,44 @@ impl Indexer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_index_all_up_to_date() {
+        let base_dir = crate::core::config::get_default_base_dir();
+        let conf_data = crate::core::config::AppConfig::load_from_dir(&base_dir).unwrap();
+        let conf = Arc::new(tokio::sync::RwLock::new(conf_data.clone()));
+        let db = Arc::new(crate::core::db::VectorDatabase::new(conf_data.storage.lancedb_dir.clone()));
+        let _ = db.load().await;
+        let embedder = Arc::new(Embedder::new(&conf_data.inference.device, conf_data.inference.vector_dim));
+        let governor = Arc::new(ResourceGovernor::new(
+            conf_data.resource_governor.max_cpu_percent,
+            conf_data.resource_governor.max_ram_percent,
+            conf_data.resource_governor.enabled,
+        ));
+        let indexer = Indexer::new(conf, db, embedder, governor);
+
+        // First run: ensure all files are indexed
+        let _ = indexer.index_all(None, false, None).await.unwrap();
+
+        // Second run: MUST be 0 files because everything is up-to-date!
+        let (tx, mut rx) = mpsc::channel::<IndexProgress>(100);
+        let h = tokio::spawn(async move {
+            let mut list = Vec::new();
+            while let Some(p) = rx.recv().await {
+                list.push(p);
+            }
+            list
+        });
+
+        let total = indexer.index_all(None, false, Some(tx)).await.unwrap();
+        let events = h.await.unwrap();
+        println!(">>> test_index_all_up_to_date second run: total_indexed = {}, events = {}", total, events.len());
+        assert_eq!(total, 0);
+        assert_eq!(events.last().map(|e| e.stage.as_str()), Some("complete"));
+    }
+}
+

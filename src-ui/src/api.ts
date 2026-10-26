@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AppConfig, DbChunk, ImageDataResponse, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus } from "./types";
+import { AppConfig, DbChunk, ImageDataResponse, IndexProgress, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus } from "./types";
 
 const imageCache = new Map<string, Promise<ImageDataResponse>>();
 
@@ -84,6 +84,9 @@ export const api = {
 
   getIndexingState: (): Promise<{ is_running: boolean; is_paused: boolean; total_chunks: number }> =>
     invoke("get_indexing_state"),
+
+  getIndexingProgress: (): Promise<IndexProgress> =>
+    invoke("get_indexing_progress"),
 
   getIndexCount: (): Promise<number> =>
     invoke("get_index_count"),

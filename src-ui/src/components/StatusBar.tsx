@@ -77,12 +77,15 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     try {
       listen<IndexProgress>("index-progress", (event) => {
         const p = event.payload;
-        if (p.total_files === 0) {
+        if (p.stage === "complete" || (p.stage !== "scanning" && p.stage !== "initializing" && p.total_files === 0)) {
           setIsIndexing(false);
           setIsPaused(false);
           setProgress(null);
-          setStatusNote("색인 대상 없음 (0개 파일)");
+          setStatusNote(p.current_file || "모든 파일이 최신 상태입니다 (색인 대상 0개)");
           setTimeout(() => setStatusNote(null), 4000);
+          fetchStatus();
+          loadFolders();
+          onIndexComplete?.();
         } else {
           setIsIndexing(true);
           setIsPaused(p.is_paused);
@@ -101,7 +104,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
 
         const count = event.payload ?? 0;
         if (count === 0) {
-          setStatusNote("색인 대상 없음 (0개 파일)");
+          setStatusNote("모든 파일이 최신 상태입니다 (색인 대상 0개)");
         } else {
           setStatusNote(`색인 완료 (${count}개 파일 처리됨)`);
         }
@@ -125,6 +128,39 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     };
   }, []);
 
+  // Fail-safe active polling every 250ms while indexing is active
+  useEffect(() => {
+    if (!isIndexing) return;
+
+    const pollTimer = setInterval(async () => {
+      try {
+        const p = await api.getIndexingProgress();
+        if (!p) return;
+
+        if (
+          p.stage === "complete" ||
+          (!p.is_running && p.stage !== "scanning" && p.stage !== "initializing" && p.stage !== "indexing")
+        ) {
+          setIsIndexing(false);
+          setIsPaused(false);
+          setProgress(null);
+          if (p.current_file) {
+            setStatusNote(p.current_file);
+            setTimeout(() => setStatusNote(null), 4000);
+          }
+          fetchStatus();
+          loadFolders();
+          onIndexComplete?.();
+        } else {
+          setProgress(p);
+          setIsPaused(p.is_paused);
+        }
+      } catch {}
+    }, 250);
+
+    return () => clearInterval(pollTimer);
+  }, [isIndexing]);
+
   // Main Toggle Button: Start / Pause / Resume
   const handleMainAction = async () => {
     setStatusNote(null);
@@ -133,11 +169,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
       setIsIndexing(true);
       setIsPaused(false);
       setProgress({
-        current_file: "색인 파일 탐색 중...",
+        stage: "scanning",
+        current_file: "색인 대상 파일 탐색 중...",
         processed_files: 0,
         total_files: 0,
         percent: 0,
         is_paused: false,
+        is_running: true,
       });
       try {
         await api.triggerIndexing();
@@ -188,11 +226,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     setIsIndexing(true);
     setIsPaused(false);
     setProgress({
-      current_file: "전체 다시 색인 초기화 중...",
+      stage: "initializing",
+      current_file: "기존 색인 데이터 초기화 중...",
       processed_files: 0,
       total_files: 0,
       percent: 0,
       is_paused: false,
+      is_running: true,
     });
 
     try {
@@ -212,11 +252,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     setIsIndexing(true);
     setIsPaused(false);
     setProgress({
+      stage: "initializing",
       current_file: `[${folderPath}] 대상 탐색 중...`,
       processed_files: 0,
       total_files: 0,
       percent: 0,
       is_paused: false,
+      is_running: true,
     });
 
     try {
@@ -394,56 +436,80 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
         {/* 4. Real-time Progress Display (Always visible during indexing) */}
         {isIndexing && (
           <div className="flex items-center gap-2 bg-slate-950/70 px-2.5 py-0.5 rounded border border-white/10 text-xs">
-            <span
-              className={`font-mono font-bold text-xs ${
-                isPaused ? "text-amber-400" : "text-sky-400"
-              }`}
-            >
-              {(progress?.percent ?? 0).toFixed(0)}%
-            </span>
+            {progress?.stage === "scanning" ? (
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-3 h-3 text-sky-400 animate-spin" />
+                <span className="text-[11px] font-medium text-sky-300">
+                  {progress.current_file || "색인 대상 파일 탐색 중..."}
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded font-medium bg-sky-500/15 text-sky-400 border border-sky-500/30 animate-pulse">
+                  탐색 중
+                </span>
+              </div>
+            ) : progress?.stage === "initializing" ? (
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />
+                <span className="text-[11px] font-medium text-amber-300">
+                  {progress.current_file || "기존 색인 데이터 초기화 중..."}
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse">
+                  초기화 중
+                </span>
+              </div>
+            ) : (
+              <>
+                <span
+                  className={`font-mono font-bold text-xs ${
+                    isPaused ? "text-amber-400" : "text-sky-400"
+                  }`}
+                >
+                  {(progress?.percent ?? 0).toFixed(0)}%
+                </span>
 
-            {/* Mini Progress Bar */}
-            <div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
-              <div
-                className={`h-full transition-all duration-300 ${
-                  isPaused ? "bg-amber-400" : "bg-sky-400"
-                }`}
-                style={{ width: `${Math.min(100, Math.max(0, progress?.percent ?? 0))}%` }}
-              />
-            </div>
+                {/* Mini Progress Bar */}
+                <div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      isPaused ? "bg-amber-400" : "bg-sky-400"
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(0, progress?.percent ?? 0))}%` }}
+                  />
+                </div>
 
-            {/* File Count */}
-            <span className="font-mono text-slate-300 text-[11px] whitespace-nowrap">
-              <strong className="text-white font-semibold">{progress?.processed_files ?? 0}</strong>
-              /{progress?.total_files ?? 0} 파일
-            </span>
+                {/* File Count */}
+                <span className="font-mono text-slate-300 text-[11px] whitespace-nowrap">
+                  <strong className="text-white font-semibold">{progress?.processed_files ?? 0}</strong>
+                  /{progress?.total_files ?? 0} 파일
+                </span>
 
-            {/* Status Pill */}
-            <span
-              className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
-                isPaused
-                  ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                  : "bg-sky-500/15 text-sky-400 border border-sky-500/30 animate-pulse"
-              }`}
-            >
-              {isPaused ? "일시정지됨" : "색인 중"}
-            </span>
+                {/* Status Pill */}
+                <span
+                  className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
+                    isPaused
+                      ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                      : "bg-sky-500/15 text-sky-400 border border-sky-500/30 animate-pulse"
+                  }`}
+                >
+                  {isPaused ? "일시정지됨" : "색인 중"}
+                </span>
 
-            {/* NPU Badge during indexing */}
-            {preferNpu && (
-              <span className="text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono font-bold flex items-center gap-0.5">
-                <Cpu className="w-2.5 h-2.5 text-sky-400" />
-                NPU
-              </span>
+                {/* NPU Badge during indexing */}
+                {preferNpu && (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono font-bold flex items-center gap-0.5">
+                    <Cpu className="w-2.5 h-2.5 text-sky-400" />
+                    NPU
+                  </span>
+                )}
+
+                {/* Truncated File Name */}
+                <span
+                  className="text-[10px] text-slate-400 font-mono truncate max-w-[140px] hidden sm:inline"
+                  title={progress?.current_file || "색인 처리 중..."}
+                >
+                  ({progress?.current_file || "색인 처리 중..."})
+                </span>
+              </>
             )}
-
-            {/* Truncated File Name */}
-            <span
-              className="text-[10px] text-slate-400 font-mono truncate max-w-[140px] hidden sm:inline"
-              title={progress?.current_file || "색인 처리 중..."}
-            >
-              ({progress?.current_file || "색인 처리 중..."})
-            </span>
           </div>
         )}
 

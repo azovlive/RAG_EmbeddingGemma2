@@ -75,11 +75,13 @@ export interface SystemStatus {
 }
 
 export interface IndexProgress {
+  stage?: string; // "idle" | "initializing" | "scanning" | "indexing" | "complete"
   current_file: string;
   processed_files: number;
   total_files: number;
   percent: number;
   is_paused: boolean;
+  is_running?: boolean;
 }
 
 export interface IndexingState {
