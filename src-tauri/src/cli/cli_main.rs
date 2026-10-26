@@ -268,7 +268,7 @@ async fn execute_standalone(req: IpcRequest) -> anyhow::Result<Value> {
                 }
             });
 
-            indexer.index_all(Some(tx)).await?;
+            indexer.index_all(None, false, Some(tx)).await?;
             let _ = print_handle.await;
 
             let total = db.get_total_chunks().await;

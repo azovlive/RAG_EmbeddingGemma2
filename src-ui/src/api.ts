@@ -55,8 +55,8 @@ export const api = {
     invoke("set_npu_preference", { preferNpu }),
 
   // Index
-  triggerIndexing: (): Promise<void> =>
-    invoke("trigger_indexing"),
+  triggerIndexing: (targetFolder?: string, force?: boolean): Promise<void> =>
+    invoke("trigger_indexing", { targetFolder: targetFolder ?? null, force: force ?? false }),
 
   pauseIndexing: (): Promise<void> =>
     invoke("pause_indexing"),

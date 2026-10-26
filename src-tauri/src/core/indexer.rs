@@ -66,20 +66,45 @@ impl Indexer {
         self.is_running.load(Ordering::SeqCst)
     }
 
-    pub async fn index_all(&self, progress_tx: Option<mpsc::Sender<IndexProgress>>) -> Result<()> {
+    pub async fn index_all(
+        &self,
+        target_folder: Option<String>,
+        force: bool,
+        progress_tx: Option<mpsc::Sender<IndexProgress>>,
+    ) -> Result<usize> {
         self.is_running.store(true, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
+
+        // If force re-index, clear corresponding DB chunks first
+        if force {
+            if let Some(ref folder) = target_folder {
+                let norm = normalize_path_for_query(Path::new(folder));
+                let _ = self.db.clear_folder(&norm).await;
+            } else {
+                let _ = self.db.clear_all().await;
+            }
+        }
 
         let conf = self.config.read().await.clone();
         let mut all_files = Vec::new();
 
         // 1. Collect all target files
-        for target in &conf.indexing.target_paths {
-            if !target.enabled || !target.path.exists() {
+        let search_dirs: Vec<std::path::PathBuf> = if let Some(ref folder) = target_folder {
+            vec![std::path::PathBuf::from(folder)]
+        } else {
+            conf.indexing
+                .target_paths
+                .iter()
+                .filter(|t| t.enabled && t.path.exists())
+                .map(|t| t.path.clone())
+                .collect()
+        };
+
+        for dir in search_dirs {
+            if !dir.exists() {
                 continue;
             }
-
-            for entry in walkdir::WalkDir::new(&target.path)
+            for entry in walkdir::WalkDir::new(&dir)
                 .follow_links(false)
                 .into_iter()
                 .filter_map(|e| e.ok())
@@ -88,7 +113,7 @@ impl Indexer {
                     let path = entry.path().to_path_buf();
 
                     // Check exclude patterns relative to target root
-                    if let Ok(rel) = path.strip_prefix(&target.path) {
+                    if let Ok(rel) = path.strip_prefix(&dir) {
                         let excluded = conf.indexing.exclude_patterns.iter().any(|pattern| {
                             rel.components().any(|c| c.as_os_str() == pattern.as_str())
                         });
@@ -108,6 +133,22 @@ impl Indexer {
         }
 
         let total = all_files.len();
+
+        // If 0 files found, notify immediately and finish cleanly
+        if total == 0 {
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send(IndexProgress {
+                    current_file: "색인 대상 파일 없음 (0개)".to_string(),
+                    processed_files: 0,
+                    total_files: 0,
+                    percent: 100.0,
+                    is_paused: false,
+                }).await;
+            }
+            self.is_running.store(false, Ordering::SeqCst);
+            self.is_paused.store(false, Ordering::SeqCst);
+            return Ok(0);
+        }
 
         // 2. Process files with Read-Only guarantee & Resource Governor
         for (idx, file_path) in all_files.into_iter().enumerate() {
@@ -140,7 +181,7 @@ impl Indexer {
                 tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
             }
 
-            let _ = self.index_single_file(&file_path).await;
+            let _ = self.index_single_file(&file_path, force).await;
 
             if let Some(ref tx) = progress_tx {
                 let _ = tx.send(IndexProgress {
@@ -156,10 +197,10 @@ impl Indexer {
         self.is_running.store(false, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
 
-        Ok(())
+        Ok(total)
     }
 
-    pub async fn index_single_file(&self, path: &Path) -> Result<()> {
+    pub async fn index_single_file(&self, path: &Path, force: bool) -> Result<()> {
         if !path.is_file() {
             return Ok(());
         }
@@ -178,10 +219,12 @@ impl Indexer {
         let file_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&content_bytes));
         let normalized = normalize_path_for_query(path);
 
-        // Check if hash matches existing record
-        if let Some(existing_hash) = self.db.get_existing_hash(&normalized).await {
-            if existing_hash == file_hash {
-                return Ok(()); // File unchanged, skip
+        // Check if hash matches existing record (unless force is true)
+        if !force {
+            if let Some(existing_hash) = self.db.get_existing_hash(&normalized).await {
+                if existing_hash == file_hash {
+                    return Ok(()); // File unchanged, skip
+                }
             }
         }
 

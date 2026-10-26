@@ -16,13 +16,20 @@ pub struct IndexingState {
 pub async fn trigger_indexing(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
+    target_folder: Option<String>,
+    force: Option<bool>,
 ) -> Result<(), String> {
+    let force_reindex = force.unwrap_or(false);
+
     if state.indexer.is_currently_running() {
-        if state.indexer.is_currently_paused() {
+        if !force_reindex && state.indexer.is_currently_paused() {
             state.indexer.resume();
             return Ok(());
         }
-        return Ok(());
+        if !force_reindex {
+            return Ok(());
+        }
+        return Err("현재 다른 색인 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.".to_string());
     }
 
     let indexer = state.indexer.clone();
@@ -38,12 +45,15 @@ pub async fn trigger_indexing(
             }
         });
 
-        if let Err(e) = indexer.index_all(Some(tx)).await {
-            tracing::error!("Indexing failed: {:?}", e);
-            let _ = app_handle.emit("index-error", e.to_string());
-        } else {
-            tracing::info!("Indexing finished successfully");
-            let _ = app_handle.emit("index-complete", ());
+        match indexer.index_all(target_folder, force_reindex, Some(tx)).await {
+            Ok(total_processed) => {
+                tracing::info!("Indexing finished successfully. Total: {}", total_processed);
+                let _ = app_handle.emit("index-complete", total_processed);
+            }
+            Err(e) => {
+                tracing::error!("Indexing failed: {:?}", e);
+                let _ = app_handle.emit("index-error", e.to_string());
+            }
         }
     });
 
@@ -60,19 +70,29 @@ pub async fn pause_indexing(
 
 #[tauri::command]
 pub async fn resume_indexing(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.indexer.resume();
-    Ok(())
+    if state.indexer.is_currently_running() {
+        state.indexer.resume();
+        return Ok(());
+    }
+    trigger_indexing(app, state, None, Some(false)).await
 }
 
 #[tauri::command]
 pub async fn get_indexing_state(
     state: State<'_, Arc<AppState>>,
 ) -> Result<IndexingState, String> {
+    let is_running = state.indexer.is_currently_running();
+    let is_paused = if is_running {
+        state.indexer.is_currently_paused()
+    } else {
+        false
+    };
     Ok(IndexingState {
-        is_running: state.indexer.is_currently_running(),
-        is_paused: state.indexer.is_currently_paused(),
+        is_running,
+        is_paused,
         total_chunks: state.db.get_total_chunks().await,
     })
 }

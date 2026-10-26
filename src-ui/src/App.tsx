@@ -22,7 +22,6 @@ export const App: React.FC = () => {
   const [previewLines, setPreviewLines] = useState<number>(7);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
-  const [isIndexing, setIsIndexing] = useState(false);
 
   // Load bundles and check first run on mount
   useEffect(() => {
@@ -113,13 +112,10 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerIndex = async () => {
-    setIsIndexing(true);
     try {
       await api.triggerIndexing();
     } catch (e: any) {
       console.error("Index trigger failed:", e);
-    } finally {
-      setTimeout(() => setIsIndexing(false), 2000);
     }
   };
 
@@ -177,8 +173,8 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Bottom Status & Resource Bar */}
-      <StatusBar onTriggerIndex={handleTriggerIndex} isIndexing={isIndexing} />
+      {/* Bottom Status & Resource Bar with Unified Indexing Controls */}
+      <StatusBar onIndexComplete={handleSearch} />
 
       {/* Slide-over Inspector Sheet */}
       <SheetInspector

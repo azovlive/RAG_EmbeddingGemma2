@@ -91,6 +91,26 @@ impl VectorDatabase {
         Ok(())
     }
 
+    pub async fn clear_all(&self) -> Result<()> {
+        let mut lock = self.chunks.write().await;
+        lock.clear();
+        drop(lock);
+        self.persist().await?;
+        Ok(())
+    }
+
+    pub async fn clear_folder(&self, folder_prefix: &str) -> Result<()> {
+        let mut lock = self.chunks.write().await;
+        let prefix = folder_prefix.replace('\\', "/").to_lowercase();
+        lock.retain(|c| {
+            let p = c.file_path.replace('\\', "/").to_lowercase();
+            !p.starts_with(&prefix)
+        });
+        drop(lock);
+        self.persist().await?;
+        Ok(())
+    }
+
     pub async fn get_existing_hash(&self, normalized_path: &str) -> Option<String> {
         let lock = self.chunks.read().await;
         lock.iter().find(|c| c.file_path == normalized_path).map(|c| c.file_hash.clone())
