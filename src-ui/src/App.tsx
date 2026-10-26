@@ -4,7 +4,8 @@ import { api } from "./api";
 import { TitleBar } from "./components/TitleBar";
 import { BundleSelector } from "./components/BundleSelector";
 import { HeroSearch } from "./components/HeroSearch";
-import { BentoGrid } from "./components/BentoGrid";
+import { FileSidebar } from "./components/FileSidebar";
+import { PreviewList } from "./components/PreviewList";
 import { SheetInspector } from "./components/SheetInspector";
 import { WizardModal } from "./components/WizardModal";
 import { StatusBar } from "./components/StatusBar";
@@ -17,6 +18,8 @@ export const App: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchLatencyMs, setSearchLatencyMs] = useState<number | null>(null);
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
+  const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+  const [previewLines, setPreviewLines] = useState<number>(7);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
@@ -59,15 +62,21 @@ export const App: React.FC = () => {
     if (!query.trim()) {
       setResults([]);
       setSearchLatencyMs(null);
+      setActiveFilePath(null);
       return;
     }
 
     setIsSearching(true);
     const start = performance.now();
     try {
-      const res = await api.search(query, selectedBundleId, 24);
+      const res = await api.search(query, selectedBundleId, 40);
       setResults(res);
       setSearchLatencyMs(performance.now() - start);
+      if (res.length > 0) {
+        setActiveFilePath(res[0].chunk.file_path);
+      } else {
+        setActiveFilePath(null);
+      }
     } catch (e: any) {
       console.error("Search failed:", e);
     } finally {
@@ -75,9 +84,17 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSelectFile = (filePath: string) => {
+    setActiveFilePath(filePath);
+    // Smoothly scroll the right preview list to this file's card
+    const targetElement = document.getElementById(`file-card-${filePath}`);
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   const handleSelectSimilarFile = async (filePath: string) => {
     try {
-      // Find chunk for that file or set search
       const res = await api.search(filePath, undefined, 5);
       if (res.length > 0) {
         setSelectedResult(res[0]);
@@ -112,8 +129,8 @@ export const App: React.FC = () => {
       <TitleBar onOpenSettings={() => setIsSettingsOpen(true)} />
 
       {/* Main App Container */}
-      <div className="flex-1 flex flex-col px-4 pt-3 pb-2 gap-3 overflow-hidden">
-        {/* Top Controls: Bundle Selector */}
+      <div className="flex-1 flex flex-col px-4 pt-2.5 pb-2 gap-2.5 overflow-hidden">
+        {/* Top Controls: Bundle Selector & Quick Actions */}
         <div className="flex items-center justify-between gap-2">
           <BundleSelector
             bundles={bundles}
@@ -138,17 +155,26 @@ export const App: React.FC = () => {
           searchLatencyMs={searchLatencyMs}
         />
 
-        {/* Results Bento Grid */}
-        <main className="flex-1 overflow-y-auto pr-1">
-          <BentoGrid
+        {/* Master-Detail Split Pane: Left Sidebar + Right Preview */}
+        <div className="flex-1 flex gap-3 overflow-hidden min-h-0">
+          {/* Left Sidebar: Matched Files List */}
+          <FileSidebar
             results={results}
-            isSearching={isSearching}
-            onSelect={(res) => setSelectedResult(res)}
+            activeFilePath={activeFilePath}
+            onSelectFile={handleSelectFile}
+          />
+
+          {/* Right Area: Sequential Preview with 5~10 lines toggle */}
+          <PreviewList
+            results={results}
+            previewLines={previewLines}
+            onChangePreviewLines={setPreviewLines}
+            onSelectResult={(res) => setSelectedResult(res)}
             onRevealExplorer={handleRevealExplorer}
             onOpenEditor={handleOpenEditor}
             onFindSimilar={(path) => handleSelectSimilarFile(path)}
           />
-        </main>
+        </div>
       </div>
 
       {/* Bottom Status & Resource Bar */}
