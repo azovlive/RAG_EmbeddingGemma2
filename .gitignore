@@ -2,6 +2,7 @@
 /target/
 **/*.rs.bk
 Cargo.lock
+*.exe
 
 # Node / Frontend
 /src-ui/node_modules/

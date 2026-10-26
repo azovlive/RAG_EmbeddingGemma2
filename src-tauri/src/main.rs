@@ -1,7 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use clap::Parser;
-use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_GENERIC_WRITE, FILE_SHARE_WRITE, OPEN_EXISTING};
+use windows_sys::Win32::System::Console::{
+    AttachConsole, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -9,8 +13,24 @@ async fn main() -> anyhow::Result<()> {
     if args.len() > 1 {
         // Attach to the parent command line prompt if invoked from console
         unsafe {
-            AttachConsole(ATTACH_PARENT_PROCESS);
+            if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
+                let conout: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
+                let handle = CreateFileW(
+                    conout.as_ptr(),
+                    FILE_GENERIC_WRITE,
+                    FILE_SHARE_WRITE,
+                    std::ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    0,
+                );
+                if handle != INVALID_HANDLE_VALUE {
+                    SetStdHandle(STD_OUTPUT_HANDLE, handle);
+                    SetStdHandle(STD_ERROR_HANDLE, handle);
+                }
+            }
         }
+
         let cli_args = eg2_rag::cli::cli_main::CliArgs::parse();
         eg2_rag::cli::cli_main::run_cli(cli_args).await?;
         return Ok(());
