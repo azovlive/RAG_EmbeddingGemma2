@@ -315,6 +315,46 @@ if total == 0 {
 
 ---
 
+### [문제점 6] 윈도우 커스텀 타이틀바 제어 불능, 묶음 변경 시 재검색 누락, 미디어 묶음 부재 및 인스펙터 (0) 카운터 결함
+
+#### 1. 현상 (Symptoms)
+1. **타이틀바 드래그 및 창 제어 버튼 오작동**:
+   - 프레임리스 창(`decorations: false`) 상단을 드래그해도 창이 이동되지 않음.
+   - 최소화(`-`), 최대화/복원(`□`) 버튼 클릭 시 창이 반응하지 않음.
+2. **검색 완료 후 상단 묶음(Bundle) 변경 시 재검색 미수행**:
+   - 검색어가 입력되어 결과가 나온 상태에서 상단 메뉴의 다른 묶음 탭을 클릭해도 새로 검색이 실행되지 않고 이전 결과가 그대로 유지됨.
+3. **이미지 및 동영상 전용 RAG 묶음 부재**:
+   - 코드(Python, C++)와 마크다운 묶음만 존재하고 이미지 및 동영상 전용 묶음이 없어 미디어 파일만 선별 검색하기 어려움.
+4. **'유사 파일' 및 '파일 내 청크' 카운터가 항상 0으로 노출**:
+   - 상세 인스펙터 진입 시 `유사 파일 (0)`, `파일 내 청크 (0)`으로 항상 0개로 표시됨.
+
+#### 2. 근본 원인 분석 (Root Causes)
+1. **Tauri v2 보안 기능(Capabilities) 미등록 및 클라이언트 API 권한 차단**:
+   - Tauri v2는 `src-tauri/capabilities/`에 명시적인 권한 부여가 없으면 프론트엔드의 `@tauri-apps/api/window` 호출(`minimize()`, `maximize()`, `startDragging()`)을 보안 정책으로 전면 차단함.
+2. **React 비동기 State 클로저 참조 레이스 컨디션**:
+   - `BundleSelector` 클릭 시 `setSelectedBundleId(id)`를 호출한 뒤 `setTimeout(handleSearch, 50)`을 실행했으나, `handleSearch` 클로저가 이전 `selectedBundleId` 상태를 참조하여 이전 묶음으로 조회되거나 무시됨.
+3. **미디어 묶음 프리셋 및 설정값 누락**:
+   - `preset_to_extensions`에 `"image"`와 `"video"`가 등록되지 않았고 `config.toml`에도 기본 묶음이 누락됨.
+4. **경로 정규화(`replace('\\', '/')`) 불일치 및 미구현 API 바인딩**:
+   - `get_similar_files`가 Windows 역슬래시(`\`)와 슬래시(`/`)를 대소문자까지 엄격 대조하여 타깃 청크 매칭 실패.
+   - `api.ts`에 `getFileChunks` 바인딩이 누락되어 `(api as any).getFileChunks`가 항상 `undefined`를 반환함.
+
+#### 3. 해결책 및 적용 코드 (Solution)
+1. **Tauri v2 Capabilities 등록 및 네이티브 창 제어 커맨드 구현**:
+   - `src-tauri/capabilities/default.json`에 `core:window:allow-start-dragging`, `allow-minimize`, `allow-maximize`, `allow-unmaximize` 권한 부여.
+   - `system_cmd.rs`에 `minimize_window`, `toggle_maximize_window`, `start_dragging_window` Rust 네이티브 커맨드를 구현하여 `invoke`로 100% 동작 보장.
+   - `TitleBar.tsx`에 `onMouseDown={handleStartDrag}`, `onDoubleClick={handleMaximize}` 장착.
+2. **묶음 변경 시 인자 직렬 주입을 통한 즉시 재검색 파이프라인 개편 (`App.tsx`)**:
+   - `handleSearch(overrideBundleId?: string)`으로 개편하여 `onSelectBundle={(id) => handleSearch(id)}` 형태로 새 묶음 ID를 즉시 주입해 재검색 실행.
+3. **이미지/동영상 미디어 묶음 기본 탑재 (`bundle.rs`, `config.rs`, `config.toml`, `BundleSelector.tsx`)**:
+   - `media-image` (`png`, `jpg`, `jpeg`, `gif`, `webp`, `bmp`, `svg`, `ico` 등) & `media-video` (`mp4`, `webm`, `mkv`, `avi`, `mov`, `wmv` 등) 프리셋 및 아이콘(`ImageIcon`, `Video`) 완비.
+4. **인스펙터 유사 파일 & 청크 데이터 연동 및 (0) 표시 제거 (`db.rs`, `api.ts`, `SheetInspector.tsx`)**:
+   - `get_similar_files`와 `get_chunks_for_file`의 경로 정규화(`replace('\\', '/').to_lowercase()`) 완비.
+   - `api.getFileChunks` 정식 바인딩.
+   - 데이터가 있을 때만 `유사 파일 (N)`, `파일 내 청크 (N)`을 표시하고 0개일 때는 괄호 숫자 표기를 생략하여 불필요한 `(0)` 제거.
+
+---
+
 ## 3. 차기 프로젝트 구현을 위한 핵심 가이드라인 (Best Practices)
 
 ### 1. GUI 런타임 설계 원칙
