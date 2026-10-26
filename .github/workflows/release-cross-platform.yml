@@ -6,6 +6,9 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   # =========================================================================
   # Job 1: macOS Apple Silicon (M1/M2/M3/M4 - aarch64-apple-darwin) 빌드 및 자동 검증
@@ -87,6 +90,14 @@ jobs:
             target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             target/aarch64-apple-darwin/release/bundle/macos/*.app
           if-no-files-found: ignore
+
+      - name: Attach macOS DMG to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
 
   # =========================================================================
   # Job 2: Windows 11 (x86_64-pc-windows-msvc) 빌드 및 검증
