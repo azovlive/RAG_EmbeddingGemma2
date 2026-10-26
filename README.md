@@ -211,10 +211,16 @@ cargo tauri build
 
 ---
 
+## 📚 프로젝트 문서 및 가이드 (`doc/`)
+
+프로젝트 기획, UI/UX 설계, 작업 계획 및 NPU 하드웨어 구현 사양 문서는 [`doc/`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/) 폴더에 정리되어 있습니다:
+* [**`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/NPU_Intel_AI_Boost_구현_및_사양_가이드.md): Intel(R) AI Boost NPU 하드웨어 사양, Level Zero API 연동, 윈도우즈 작업관리자 Compute 엔진 구동 및 타 프로젝트 재사용 레퍼런스 가이드
+* [**`RAG_EmbeddingGemma2_기획서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EmbeddingGemma2_기획서.md) (v5.1.0): 제품 기획 및 요구사항 명세
+* [**`RAG_EG2_앱작성_작업계획서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_앱작성_작업계획서.md) (v1.1.0): 아키텍처 및 구현 로드맵
+* [**`RAG_EG2_UI_UX_지침서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_UI_UX_지침서.md) (v2.3.0): 윈도우 11 네이티브 디자인 및 반응형 인터랙션 가이드
+
+---
+
 ## 📜 라이선스
 
 본 프로젝트는 Apache License 2.0 하에 배포됩니다.
-기획 및 설계 문서:
-* [`RAG_EmbeddingGemma2_기획서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/RAG_EmbeddingGemma2_기획서.md) (v5.1.0)
-* [`RAG_EG2_앱작성_작업계획서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/RAG_EG2_앱작성_작업계획서.md) (v1.1.0)
-* [`RAG_EG2_UI_UX_지침서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/RAG_EG2_UI_UX_지침서.md) (v2.3.0)
