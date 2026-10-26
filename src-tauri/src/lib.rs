@@ -4,7 +4,7 @@ pub mod cli;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tauri::WindowEvent;
+use tauri::{Manager, WindowEvent};
 
 use crate::core::config::{AppConfig, get_default_base_dir};
 use crate::core::db::VectorDatabase;
@@ -51,6 +51,9 @@ pub fn run() {
         governor.clone(),
     ));
 
+    // Pre-load DB vectors synchronously so they are immediately available on startup
+    let _ = tauri::async_runtime::block_on(db.load());
+
     let state = Arc::new(AppState {
         config: config.clone(),
         db: db.clone(),
@@ -64,7 +67,6 @@ pub fn run() {
     let ipc_embedder = embedder.clone();
     let ipc_config = config.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = ipc_db.load().await;
         let ipc_server = DaemonIpcServer::new(ipc_db, ipc_embedder, ipc_config);
         ipc_server.run().await;
     });
@@ -78,10 +80,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                // Prevent app from quitting on close; minimize to system tray instead
-                let _ = window.hide();
-                api.prevent_close();
+            if let WindowEvent::CloseRequested { .. } = event {
+                // Exit application completely when user clicks 'X'
+                window.app_handle().exit(0);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -101,6 +102,7 @@ pub fn run() {
             crate::commands::system_cmd::get_system_status,
             crate::commands::system_cmd::reveal_in_explorer,
             crate::commands::system_cmd::open_in_editor,
+            crate::commands::system_cmd::exit_app,
             crate::commands::index_cmd::trigger_indexing,
             crate::commands::index_cmd::get_index_count,
         ])

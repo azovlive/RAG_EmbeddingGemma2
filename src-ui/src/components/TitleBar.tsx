@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { Minus, Square, X, Layers } from "lucide-react";
 
 interface TitleBarProps {
@@ -29,9 +30,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
     }
   };
 
-  const handleClose = () => {
-    // Hide to tray instead of quitting
-    appWindow?.hide();
+  const handleClose = async () => {
+    try {
+      await invoke("exit_app");
+    } catch {
+      appWindow?.close();
+    }
   };
 
   return (
@@ -74,7 +78,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
         <button
           onClick={handleClose}
           className="p-1.5 rounded hover:bg-red-500/80 text-slate-400 hover:text-white transition-colors"
-          title="시스템 트레이로 숨기기"
+          title="프로그램 종료"
         >
           <X className="w-3.5 h-3.5" />
         </button>

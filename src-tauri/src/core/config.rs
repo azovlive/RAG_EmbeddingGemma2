@@ -21,11 +21,32 @@ impl Default for StorageConfig {
 }
 
 pub fn get_default_base_dir() -> PathBuf {
+    // 1. Check environment variable
     if let Ok(val) = std::env::var("EG2_RAG_HOME") {
         if !val.trim().is_empty() {
-            return PathBuf::from(val);
+            let p = PathBuf::from(val);
+            if p.exists() {
+                return p;
+            }
         }
     }
+
+    // 2. Check local test directory next to executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let local_test = parent.join("test").join("RAG_EG2");
+            if local_test.join("config.toml").exists() {
+                return local_test;
+            }
+        }
+    }
+
+    // 3. Check local test directory in working directory
+    let local_test_cur = PathBuf::from("test").join("RAG_EG2");
+    if local_test_cur.join("config.toml").exists() {
+        return dunce::canonicalize(&local_test_cur).unwrap_or(local_test_cur);
+    }
+
     PathBuf::from(r"C:\RAG_EG2")
 }
 

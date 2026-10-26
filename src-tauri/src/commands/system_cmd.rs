@@ -70,3 +70,9 @@ pub async fn open_in_editor(file_path: String, line: Option<u32>) -> Result<(), 
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
+}
