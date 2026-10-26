@@ -25,7 +25,7 @@ pub fn get_default_base_dir() -> PathBuf {
     if let Ok(val) = std::env::var("EG2_RAG_HOME") {
         if !val.trim().is_empty() {
             let p = PathBuf::from(val);
-            if p.exists() {
+            if p.exists() || std::fs::create_dir_all(&p).is_ok() {
                 return p;
             }
         }
@@ -47,8 +47,34 @@ pub fn get_default_base_dir() -> PathBuf {
         return dunce::canonicalize(&local_test_cur).unwrap_or(local_test_cur);
     }
 
-    // Default test base directory prior to production release
-    PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\RAG_EG2")
+    #[cfg(target_os = "windows")]
+    {
+        let win_test = PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\RAG_EG2");
+        if win_test.exists() {
+            return win_test;
+        }
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let app_dir = PathBuf::from(local_app_data).join("eg2-rag");
+            let _ = std::fs::create_dir_all(&app_dir);
+            return app_dir;
+        }
+        return win_test;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let mac_app_dir = PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("com.azovlive.eg2rag");
+            let _ = std::fs::create_dir_all(&mac_app_dir);
+            return mac_app_dir;
+        }
+        let fallback = PathBuf::from("/tmp/eg2-rag-data");
+        let _ = std::fs::create_dir_all(&fallback);
+        fallback
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +117,15 @@ impl Default for IndexingConfig {
                     enabled: true,
                 });
             }
+        } else if let Ok(home) = std::env::var("HOME") {
+            let docs = PathBuf::from(&home).join("Documents");
+            if docs.exists() {
+                target_paths.push(TargetFolder {
+                    name: "Documents".to_string(),
+                    path: docs,
+                    enabled: true,
+                });
+            }
         }
 
         Self {
@@ -99,8 +134,10 @@ impl Default for IndexingConfig {
                 ".git".to_string(),
                 "node_modules".to_string(),
                 "target".to_string(),
-                "dist".to_string(),
                 "__pycache__".to_string(),
+                ".venv".to_string(),
+                "dist".to_string(),
+                ".DS_Store".to_string(),
                 ".obsidian".to_string(),
                 ".trash".to_string(),
             ],

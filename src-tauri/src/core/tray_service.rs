@@ -14,7 +14,14 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<TrayIcon<R>, tauri::
 
     let icon = match app.default_window_icon() {
         Some(icon) => icon.clone(),
-        None => tauri::image::Image::new_owned(vec![0, 120, 215, 255], 1, 1),
+        None => {
+            // 32x32 RGBA fallback icon for macOS NSStatusBar & Windows System Tray safety
+            let mut rgba = Vec::with_capacity(32 * 32 * 4);
+            for _ in 0..(32 * 32) {
+                rgba.extend_from_slice(&[56, 189, 248, 255]);
+            }
+            tauri::image::Image::new_owned(rgba, 32, 32)
+        }
     };
 
     let tray = TrayIconBuilder::with_id("eg2-rag-tray")

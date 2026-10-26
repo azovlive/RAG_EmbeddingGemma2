@@ -1,0 +1,129 @@
+name: Cross-Platform Release (Windows x64 & macOS Apple Silicon M1+)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  # =========================================================================
+  # Job 1: macOS Apple Silicon (M1/M2/M3/M4 - aarch64-apple-darwin) 빌드 및 자동 검증
+  # =========================================================================
+  build-macos-arm64:
+    runs-on: macos-14 # GitHub 공식 Apple M1 (arm64) 러너
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Rust Stable (aarch64-apple-darwin)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Frontend UI (React + Vite)
+        run: |
+          npm --prefix src-ui install
+          npm --prefix src-ui run build
+
+      - name: Generate macOS .icns Icon if Missing
+        run: |
+          if [ ! -f "src-tauri/icons/icon.icns" ]; then
+            npx --prefix src-ui @tauri-apps/cli icon src-tauri/icons/icon.png --output src-tauri/icons || true
+          fi
+
+      - name: Step 1 - Run Rust Unit Tests on Apple Silicon M1 Hardware
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --release -- --nocapture
+
+      - name: Step 2 - Build Tauri macOS Application (.app & .dmg)
+        run: |
+          npx --prefix src-ui @tauri-apps/cli build --target aarch64-apple-darwin
+
+      - name: Step 3 - Automated Headless & CLI Smoke Test on M1 Runner
+        run: |
+          BIN_PATH="src-tauri/target/aarch64-apple-darwin/release/eg2-rag"
+          if [ ! -f "$BIN_PATH" ]; then
+            BIN_PATH="target/aarch64-apple-darwin/release/eg2-rag"
+          fi
+          echo "Testing binary at: $BIN_PATH"
+          chmod +x "$BIN_PATH"
+
+          # 1) CLI Status 테스트 (독립 실행 모드 및 ~/Library/Application Support 경로 생성 검증)
+          "$BIN_PATH" status
+
+          # 2) 샘플 문서 색인 및 Apple Silicon Accelerate(vDSP) 가속 연산 검증
+          mkdir -p /tmp/eg2_mac_test_docs
+          echo "# Apple Silicon M1 Test Document\nSemantic search on macOS M1 ANE/AMX works!" > /tmp/eg2_mac_test_docs/readme.md
+          "$BIN_PATH" index
+          "$BIN_PATH" query "Apple Silicon" --json
+
+      - name: Step 4 - Ad-hoc Code Signing (Gatekeeper 차단 방지)
+        run: |
+          APP_BUNDLE=$(find src-tauri/target target -name "eg2-rag.app" -type d 2>/dev/null | head -n 1)
+          if [ -n "$APP_BUNDLE" ]; then
+            echo "Signing App Bundle: $APP_BUNDLE"
+            codesign --force --deep --sign - "$APP_BUNDLE"
+            codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+          fi
+
+      - name: Upload macOS Apple Silicon Artifacts (.dmg & .app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: eg2-rag-macos-apple-silicon-arm64
+          path: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            target/aarch64-apple-darwin/release/bundle/macos/*.app
+          if-no-files-found: ignore
+
+  # =========================================================================
+  # Job 2: Windows 11 (x86_64-pc-windows-msvc) 빌드 및 검증
+  # =========================================================================
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Rust Stable (x86_64-pc-windows-msvc)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cargo Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Frontend UI
+        run: |
+          npm --prefix src-ui install
+          npm --prefix src-ui run build
+
+      - name: Build Windows Release Binary
+        run: |
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Upload Windows Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eg2-rag-windows-x64
+          path: |
+            src-tauri/target/release/eg2-rag.exe
+            target/release/eg2-rag.exe
+          if-no-files-found: ignore

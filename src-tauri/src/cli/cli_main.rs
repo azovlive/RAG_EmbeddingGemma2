@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use clap::{Parser, Subcommand};
-use tokio::net::windows::named_pipe::ClientOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
 use serde_json::Value;
@@ -16,7 +15,7 @@ use crate::core::bundle::normalize_path_for_query;
 
 #[derive(Parser, Debug)]
 #[command(name = "eg2-rag")]
-#[command(about = "High-performance Local Semantic Search & MCP Agent for Windows 11", long_about = None)]
+#[command(about = "High-performance Local Semantic Search & MCP Agent for Windows 11 & macOS Apple Silicon", long_about = None)]
 pub struct CliArgs {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -173,9 +172,20 @@ async fn send_ipc_or_standalone(req: IpcRequest) -> anyhow::Result<Value> {
 }
 
 async fn send_ipc_request(req: IpcRequest) -> anyhow::Result<Value> {
-    let client = ClientOptions::new().open(PIPE_NAME).map_err(|e| {
-        anyhow::anyhow!("Named Pipe connect failed: {}", e)
-    })?;
+    #[cfg(target_os = "windows")]
+    let client = {
+        use tokio::net::windows::named_pipe::ClientOptions;
+        ClientOptions::new().open(PIPE_NAME).map_err(|e| {
+            anyhow::anyhow!("Named Pipe connect failed: {}", e)
+        })?
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let client = {
+        tokio::net::UnixStream::connect(PIPE_NAME).await.map_err(|e| {
+            anyhow::anyhow!("Unix Socket connect failed: {}", e)
+        })?
+    };
 
     let (reader, mut writer) = tokio::io::split(client);
     let mut req_str = serde_json::to_string(&req)?;

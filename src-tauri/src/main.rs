@@ -1,8 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use clap::Parser;
+
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Console::{
     AttachConsole, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
 };
@@ -10,7 +16,8 @@ use windows_sys::Win32::System::Console::{
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
-        // Attach to the parent command line prompt if invoked from console
+        // On Windows, attach to parent console when windows_subsystem = "windows" is active
+        #[cfg(target_os = "windows")]
         unsafe {
             if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
                 let conout: Vec<u16> = "CONOUT$\0".encode_utf16().collect();

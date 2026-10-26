@@ -1,6 +1,5 @@
 use std::io::{self, BufRead, Write};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::windows::named_pipe::ClientOptions;
 use serde_json::{json, Value};
 use crate::core::daemon_ipc::{PIPE_NAME, IpcRequest, IpcResponse};
 
@@ -131,13 +130,28 @@ pub async fn run_mcp_server() -> anyhow::Result<()> {
 }
 
 async fn call_daemon_tool(tool_name: &str, args: Value) -> Value {
-    // Connect to named pipe
-    let client = match ClientOptions::new().open(PIPE_NAME) {
-        Ok(c) => c,
-        Err(e) => {
-            return json!({
-                "error": format!("Cannot connect to eg2-rag background daemon ({}). Please make sure eg2-rag is running.", e)
-            });
+    #[cfg(target_os = "windows")]
+    let client = {
+        use tokio::net::windows::named_pipe::ClientOptions;
+        match ClientOptions::new().open(PIPE_NAME) {
+            Ok(c) => c,
+            Err(e) => {
+                return json!({
+                    "error": format!("Cannot connect to eg2-rag background daemon ({}). Please make sure eg2-rag is running.", e)
+                });
+            }
+        }
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let client = {
+        match tokio::net::UnixStream::connect(PIPE_NAME).await {
+            Ok(c) => c,
+            Err(e) => {
+                return json!({
+                    "error": format!("Cannot connect to eg2-rag background daemon ({}). Please make sure eg2-rag is running.", e)
+                });
+            }
         }
     };
 

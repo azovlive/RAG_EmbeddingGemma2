@@ -78,11 +78,24 @@ pub async fn open_file_default(file_path: String) -> Result<(), String> {
         return Err(format!("파일이 존재하지 않습니다: {}", file_path));
     }
     let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
-    let _ = Command::new("cmd")
-        .args(&["/C", "start", "", &win_path])
-        .spawn()
-        .map_err(|e| format!("기본 뷰어 실행 실패: {}", e))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let win_path = canonical_path.to_string_lossy().replace('/', "\\");
+        Command::new("cmd")
+            .args(&["/C", "start", "", &win_path])
+            .spawn()
+            .map_err(|e| format!("기본 뷰어 실행 실패: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&canonical_path)
+            .spawn()
+            .map_err(|e| format!("기본 앱 실행 실패: {}", e))?;
+    }
+
     Ok(())
 }
 
@@ -107,29 +120,29 @@ pub async fn reveal_in_explorer(file_path: String) -> Result<(), String> {
         return Err(format!("파일이 존재하지 않습니다: {}", file_path));
     }
 
-    // Canonicalize path to ensure clean absolute Windows path without \\?\ prefix
     let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
 
     #[cfg(target_os = "windows")]
     {
+        let win_path = canonical_path.to_string_lossy().replace('/', "\\");
         let mut cmd = Command::new("explorer.exe");
         if canonical_path.is_dir() {
-            // If it's a directory, open the folder directly
             cmd.raw_arg(format!("\"{}\"", win_path));
         } else {
-            // explorer.exe requires `/select,"<path>"` without space after comma.
-            // Using standard .arg() causes Rust's CommandLineToArgvW escaping to wrap the entire
-            // argument in quotes ("/select,\"<path>\""), causing Explorer to fail parsing and default to 'Documents'.
-            // Using raw_arg ensures exact Windows Explorer command-line syntax.
             cmd.raw_arg(format!(r#"/select,"{}""#, win_path));
         }
         cmd.spawn().map_err(|e| format!("탐색기 실행 실패: {}", e))?;
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = win_path;
+        let mut cmd = Command::new("open");
+        if canonical_path.is_dir() {
+            cmd.arg(&canonical_path);
+        } else {
+            cmd.arg("-R").arg(&canonical_path);
+        }
+        cmd.spawn().map_err(|e| format!("Finder 실행 실패: {}", e))?;
     }
 
     Ok(())
@@ -143,23 +156,47 @@ pub async fn open_in_editor(file_path: String, line: Option<u32>) -> Result<(), 
     }
 
     let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
 
-    // Try VS Code first if available
-    let line_arg = match line {
-        Some(l) => format!("--goto \"{}:{}\"", win_path, l),
-        None => format!("\"{}\"", win_path),
-    };
+    #[cfg(target_os = "windows")]
+    {
+        let win_path = canonical_path.to_string_lossy().replace('/', "\\");
+        let line_arg = match line {
+            Some(l) => format!("--goto \"{}:{}\"", win_path, l),
+            None => format!("\"{}\"", win_path),
+        };
 
-    let vscode = Command::new("cmd")
-        .args(&["/C", &format!("code {}", line_arg)])
-        .spawn();
-
-    if vscode.is_err() {
-        // Fallback to default system opener
-        let _ = Command::new("cmd")
-            .args(&["/C", "start", "", &win_path])
+        let vscode = Command::new("cmd")
+            .args(&["/C", &format!("code {}", line_arg)])
             .spawn();
+
+        if vscode.is_err() {
+            let _ = Command::new("cmd")
+                .args(&["/C", "start", "", &win_path])
+                .spawn();
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let path_str = canonical_path.to_string_lossy().to_string();
+        let goto_target = match line {
+            Some(l) => format!("{}:{}", path_str, l),
+            None => path_str.clone(),
+        };
+
+        let vscode_cli = Command::new("code")
+            .args(&["--goto", &goto_target])
+            .spawn();
+
+        if vscode_cli.is_err() {
+            let vscode_app = Command::new("open")
+                .args(&["-a", "Visual Studio Code", "--args", "--goto", &goto_target])
+                .spawn();
+
+            if vscode_app.is_err() {
+                let _ = Command::new("open").args(&["-t", &path_str]).spawn();
+            }
+        }
     }
 
     Ok(())
