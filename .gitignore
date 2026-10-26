@@ -3,6 +3,8 @@
 **/*.rs.bk
 Cargo.lock
 *.exe
+*.zip
+*.msi
 
 # Node / Frontend
 /src-ui/node_modules/

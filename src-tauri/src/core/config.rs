@@ -78,7 +78,7 @@ pub fn get_default_base_dir() -> PathBuf {
             let mac_app_dir = PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("com.eg2rag.app");
+                .join("com.eg2rag.desktop");
             let _ = std::fs::create_dir_all(&mac_app_dir);
             return mac_app_dir;
         }
