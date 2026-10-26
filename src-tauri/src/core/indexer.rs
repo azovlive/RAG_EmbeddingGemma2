@@ -1,0 +1,203 @@
+use std::path::Path;
+use std::sync::Arc;
+use anyhow::Result;
+use tokio::sync::mpsc;
+
+use super::config::AppConfig;
+use super::db::{DbChunk, VectorDatabase};
+use super::embedder::Embedder;
+use super::bundle::normalize_path_for_query;
+use super::cloud_filter::is_cloud_placeholder;
+use super::code_chunker::CodeChunker;
+use super::extractor::TextExtractor;
+use super::pdf_parser::PdfParser;
+use super::resource_governor::ResourceGovernor;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexProgress {
+    pub current_file: String,
+    pub processed_files: usize,
+    pub total_files: usize,
+    pub percent: f32,
+    pub is_paused: bool,
+}
+
+pub struct Indexer {
+    pub config: Arc<tokio::sync::RwLock<AppConfig>>,
+    pub db: Arc<VectorDatabase>,
+    pub embedder: Arc<Embedder>,
+    pub governor: Arc<ResourceGovernor>,
+}
+
+impl Indexer {
+    pub fn new(
+        config: Arc<tokio::sync::RwLock<AppConfig>>,
+        db: Arc<VectorDatabase>,
+        embedder: Arc<Embedder>,
+        governor: Arc<ResourceGovernor>,
+    ) -> Self {
+        Self {
+            config,
+            db,
+            embedder,
+            governor,
+        }
+    }
+
+    pub async fn index_all(&self, progress_tx: Option<mpsc::Sender<IndexProgress>>) -> Result<()> {
+        let conf = self.config.read().await.clone();
+        let mut all_files = Vec::new();
+
+        // 1. Collect all target files
+        for target in &conf.indexing.target_paths {
+            if !target.enabled || !target.path.exists() {
+                continue;
+            }
+
+            for entry in walkdir::WalkDir::new(&target.path)
+                .follow_links(false)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.file_type().is_file() {
+                    let path = entry.path().to_path_buf();
+
+                    // Check exclude patterns
+                    let path_str = path.to_string_lossy();
+                    let excluded = conf.indexing.exclude_patterns.iter().any(|pattern| path_str.contains(pattern));
+                    if excluded {
+                        continue;
+                    }
+
+                    // Check cloud placeholder (Zero-download invariant)
+                    if conf.indexing.skip_cloud_placeholders && is_cloud_placeholder(&path) {
+                        continue;
+                    }
+
+                    all_files.push(path);
+                }
+            }
+        }
+
+        let total = all_files.len();
+
+        // 2. Process files with Read-Only guarantee & Resource Governor
+        for (idx, file_path) in all_files.into_iter().enumerate() {
+            // Check Resource Governor
+            let (_, _, should_pause) = self.governor.check_system().await;
+            if should_pause {
+                if let Some(ref tx) = progress_tx {
+                    let _ = tx.send(IndexProgress {
+                        current_file: file_path.to_string_lossy().to_string(),
+                        processed_files: idx,
+                        total_files: total,
+                        percent: if total > 0 { (idx as f32 / total as f32) * 100.0 } else { 100.0 },
+                        is_paused: true,
+                    }).await;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+            }
+
+            let _ = self.index_single_file(&file_path).await;
+
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send(IndexProgress {
+                    current_file: file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
+                    processed_files: idx + 1,
+                    total_files: total,
+                    percent: if total > 0 { ((idx + 1) as f32 / total as f32) * 100.0 } else { 100.0 },
+                    is_paused: false,
+                }).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn index_single_file(&self, path: &Path) -> Result<()> {
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        // Zero-Modification Guarantee: Check cloud placeholder without opening
+        if is_cloud_placeholder(path) {
+            return Ok(());
+        }
+
+        // Shared Read-Only: Open with read-only permission without locks
+        let content_bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(_) => return Ok(()), // Gracefully skip inaccessible or locked files
+        };
+
+        let file_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&content_bytes));
+        let normalized = normalize_path_for_query(path);
+
+        // Check if hash matches existing record
+        if let Some(existing_hash) = self.db.get_existing_hash(&normalized).await {
+            if existing_hash == file_hash {
+                return Ok(()); // File unchanged, skip
+            }
+        }
+
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let display_path = path.to_string_lossy().to_string();
+        let mtime = std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+            .unwrap_or(0);
+
+        // Parse chunks according to file extension
+        let chunks = if ext == "pdf" {
+            PdfParser::parse_pdf(path)?
+        } else {
+            let content_str = String::from_utf8_lossy(&content_bytes);
+            match ext.as_str() {
+                "py" | "ipynb" | "cpp" | "hpp" | "c" | "h" | "cc" | "rs" => {
+                    CodeChunker::chunk_file(path, &content_str)?
+                }
+                "md" | "markdown" | "txt" => {
+                    TextExtractor::extract_chunks(&content_str, &ext)?
+                }
+                _ => {
+                    CodeChunker::chunk_generic(&content_str, &ext)?
+                }
+            }
+        };
+
+        if chunks.is_empty() {
+            return Ok(());
+        }
+
+        // Prepare 14-column database chunks
+        let mut db_chunks = Vec::new();
+        for (chunk_idx, c) in chunks.into_iter().enumerate() {
+            let id = format!("{:016x}_{}", xxhash_rust::xxh3::xxh3_64(format!("{normalized}_{chunk_idx}").as_bytes()), chunk_idx);
+            let embed_input = Embedder::format_embedding_input(&file_name, &c.symbol, &c.content);
+            let vector = self.embedder.embed(&embed_input).await?;
+
+            db_chunks.push(DbChunk {
+                id,
+                file_path: normalized.clone(),
+                display_path: display_path.clone(),
+                file_name: file_name.clone(),
+                ext: ext.clone(),
+                lang: c.lang,
+                symbol: c.symbol,
+                start_line: c.start_line,
+                end_line: c.end_line,
+                chunk_index: chunk_idx as u32,
+                content: c.content,
+                file_hash: file_hash.clone(),
+                mtime,
+                vector,
+            });
+        }
+
+        self.db.upsert_chunks(db_chunks).await?;
+        Ok(())
+    }
+}
