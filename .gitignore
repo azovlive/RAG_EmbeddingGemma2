@@ -48,6 +48,9 @@ models/*.bin
 # Test folder (local only)
 test/
 
+# Documentation (local only)
+doc/
+
 # Environment
 .env
 .env.local

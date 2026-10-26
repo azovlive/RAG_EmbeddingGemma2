@@ -229,20 +229,6 @@ cargo tauri build
 
 ---
 
-## 📚 프로젝트 문서 및 가이드 (`doc/`)
-
-프로젝트 기획, UI/UX 설계, 작업 계획, NPU 하드웨어 구현 사양 및 macOS 통합 문서는 [`doc/`](./doc/) 폴더에 정리되어 있습니다:
-* [**`RAG_EG2_문제점_및_해결_보고서.md`**](./doc/RAG_EG2_문제점_및_해결_보고서.md): 개발·테스트 과정에서 발생했던 핵심 10대 이슈 분석 및 해결 가이드
-* [**`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`**](./doc/NPU_Intel_AI_Boost_구현_및_사양_가이드.md): Intel(R) AI Boost NPU 하드웨어 사양, Level Zero API 연동 및 윈도우즈 작업관리자 가속 가이드
-* [**`RAG_EG2_macOS_M1_사양_및_아키텍처_명세서.md`**](./doc/RAG_EG2_macOS_M1_사양_및_아키텍처_명세서.md): Apple Silicon M1+ 사양 및 단일 프로젝트 통합 아키텍처 명세서
-* [**`RAG_EG2_macOS_통합_구현_작업계획서.md`**](./doc/RAG_EG2_macOS_통합_구현_작업계획서.md): macOS 크로스 플랫폼 구현 Step-by-Step 작업계획서
-* [**`RAG_EG2_macOS_무결점_빌드_및_오류방지_가이드.md`**](./doc/RAG_EG2_macOS_무결점_빌드_및_오류방지_가이드.md): 로컬 Mac 미보유 환경 대응 10대 에러 차단 및 GitHub Actions 무인 검증 가이드
-* [**`RAG_EmbeddingGemma2_기획서.md`**](./doc/RAG_EmbeddingGemma2_기획서.md): 제품 기획 및 요구사항 명세
-* [**`RAG_EG2_앱작성_작업계획서.md`**](./doc/RAG_EG2_앱작성_작업계획서.md): 아키텍처 및 구현 완료 보고서
-* [**`RAG_EG2_UI_UX_지침서.md`**](./doc/RAG_EG2_UI_UX_지침서.md): 데스크톱 네이티브 디자인 및 반응형 인터랙션 가이드
-
----
-
 ## 📜 라이선스
 
 본 프로젝트는 Apache License 2.0 하에 배포됩니다.
