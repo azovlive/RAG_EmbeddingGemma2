@@ -71,8 +71,8 @@ mod tests {
 
     #[test]
     fn test_normalize_path() {
-        let p = PathBuf::from(r"C:\Users\Azov\Project\Main.PY");
-        assert_eq!(normalize_path_for_query(&p), "c:/users/azov/project/main.py");
+        let p = PathBuf::from(r"C:\Users\Developer\Project\Main.PY");
+        assert_eq!(normalize_path_for_query(&p), "c:/users/developer/project/main.py");
     }
 
     #[test]

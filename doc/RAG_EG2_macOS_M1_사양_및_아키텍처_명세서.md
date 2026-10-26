@@ -127,7 +127,7 @@ Windows의 OneDrive Files On-Demand와 마찬가지로, macOS 사용자는 `~/Li
 1. 환경변수 `EG2_RAG_HOME`이 존재하면 우선 사용.
 2. 개발/테스트 환경(`test/RAG_EG2/config.toml`)이 현재 폴더에 존재하면 사용.
 3. 그 외 모든 프로덕션 환경(특히 `.app` 실행 시):
-   * **`$HOME/Library/Application Support/com.azovlive.eg2rag`** 경로를 기본 데이터 디렉터리로 설정하고 `std::fs::create_dir_all`로 자동 생성합니다.
+   * **`$HOME/Library/Application Support/com.eg2rag.app`** 경로를 기본 데이터 디렉터리로 설정하고 `std::fs::create_dir_all`로 자동 생성합니다.
 4. 기본 색인 대상 폴더(`IndexingConfig::default()`):
    * `$HOME/Documents` 폴더가 존재하면 기본 색인 대상으로 등록합니다.
 

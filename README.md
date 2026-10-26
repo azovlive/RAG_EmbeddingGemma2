@@ -67,12 +67,11 @@ EmbeddingGemma 2에 대한 기술적 사양, 벤치마크 및 모델 세부 사�
 * **🧠 자원 감응형 자동 스로틀링 (Resource Governor):**
   * `sysinfo` 기반 실시간 모니터링으로 시스템 부하(CPU > 65%, RAM > 80%) 시 색인을 자동 일시정지하고 자원 안정 시 자동 재개.
 * **📂 주제별 & 프로그래밍 언어별 RAG 묶음 (Knowledge Collections):**
-  * **Python 전용 묶음:** `.py`, `.ipynb`, `.pyi` 선별 참조 (Base64/outputs 제거 순수 코드 셀 파싱).
-  * **C/C++ 전용 묶음:** `.cpp`, `.hpp`, `.c`, `.h`, `.cc` 선별 참조.
-  * **Rust 전용 묶음:** `.rs` 선별 참조.
-  * **프로그래밍 코드 전체 묶음:** 모든 소스코드 언어 통합 참조.
-  * **마크다운/PDF 전용 묶음:** 옵시디언 볼트 메모, 사내 규정집 전용 분리.
-  * **재색인 시간 0초:** 기존 벡터 테이블에 Apache Arrow 비트맵 필터링을 동적 적용하여 수 분간의 재색인 없이 즉시 묶음 생성/수정 가능.
+  * **Python 묶음:** `.py`, `.ipynb`, `.pyi` 선별 참조 (Base64/outputs 제거 순수 코드 셀 파싱).
+  * **이미지 & 동영상 미디어 묶음:** 이미지(`.png`, `.jpg`, `.svg` 등) 및 영상(`.mp4`, `.webm` 등) 전용 선별 검색.
+  * **마크다운/PDF 문서 묶음:** 옵시디언 볼트 메모, 프로젝트 문서, 사내 규정집 전용 분리.
+  * **사용자 정의 RAG 묶음:** 원하는 폴더 및 확장자(C/C++, Rust, 웹 코드 등)를 클릭 몇 번으로 즉시 생성/수정 가능.
+  * **재색인 시간 0초:** 기존 벡터 테이블에 동적 필터링을 적용하여 수 분간의 재색인 없이 즉시 묶음 생성/수정 가능.
 * **🎨 파일 유형별 지능형 멀티미디어 미리보기 (Media-Aware Multi-Type Preview):**
   * **이미지 (`.png`, `.jpg`, `.jpeg`, `.svg`, `.webp`, `.bmp`):** 바이너리 코드 노출 없이 카드 칸에 꼭 맞춘 깔끔한 썸네일(`object-contain`, 반투명 격자 배경, 해상도/용량 배지) 및 상세 인스펙터 [화면 맞춤 ↔ 1:1 원본] 확대 뷰어 제공.
   * **동영상 (`.mp4`, `.webm`, `.mkv`, `.avi`):** 카드 내 비디오 썸네일 및 인라인 플레이어, 재생 시간 배지 및 Windows 기본 미디어 플레이어 원클릭 재생.
@@ -193,30 +192,28 @@ eg2-rag mcp-serve
 
 ## 🖥️ 시스템 구동 사양 (System Requirements)
 
-`eg2-rag`는 초경량 740M 파라미터의 **EmbeddingGemma 2** 모델을 내장하여 설계되었으므로, 고가의 외장 GPU 없이 일반 노트북이나 데스크톱의 CPU만으로도 쾌적하게 동작합니다. 인텔 코어 Ultra 프로세서의 **Intel(R) AI Boost NPU**가 탑재된 기기에서는 CPU 점유율 0%, 3W 미만의 극소 전력으로 상시 백그라운드 색인을 가속합니다.
+`eg2-rag`는 초경량 740M 파라미터의 **EmbeddingGemma 2** 모델을 내장하여 설계되었으므로, 고가의 외장 GPU 없이 일반 노트북이나 데스크톱의 CPU만으로도 쾌적하게 동작합니다. 인텔 코어 Ultra 프로세서의 **Intel(R) AI Boost NPU** 또는 Mac의 **Apple Silicon (M1/M2/M3/M4) ANE/Metal** 가속기가 탑재된 기기에서는 CPU 점유율 0%, 3W 미만의 극소 전력으로 상시 백그라운드 색인을 가속합니다.
 
 | 사양 구분 | 최소 요구 사양 (Minimum) | 권장 요구 사양 (Recommended) |
 | :--- | :--- | :--- |
-| **운영체제 (OS)** | **Windows 10 64-bit** (버전 21H2 이상)<br>또는 **Windows 11 64-bit** | **Windows 11 64-bit** (23H2 / 24H2 / 26H2 이상)<br>*(DWM Mica 반투명 블러 효과 완전 지원)* |
-| **프로세서 (CPU)** | Intel Core i3 / i5 8세대 이상<br>또는 AMD Ryzen 3 / 5 3000번대 이상 | **Intel Core Ultra 5 / 7 / 9** (Series 1 "Meteor Lake", Series 2 "Lunar Lake" / "Arrow Lake")<br>또는 AMD Ryzen AI 300 시리즈 이상 |
-| **신경망 가속기 (NPU)** | **필수 아님** (CPU 단독으로 쾌적 구동) | **Intel(R) AI Boost NPU 탑재**<br>*(CPU/GPU 간섭 0%, < 3W 초저전력 oneAPI Level Zero 하드웨어 가속)* |
-| **시스템 메모리 (RAM)** | **8 GB RAM** 이상 | **16 GB ~ 32 GB RAM** 이상 (LPDDR5x 권장) |
-| **저장 공간 (Storage)** | **2 GB 이상의 여유 공간**<br>(바이너리 21MB + 벡터 DB 및 모델 캐시) | **고속 NVMe PCIe 4.0 SSD**<br>(5 GB 이상의 여유 공간) |
-| **웹뷰 런타임** | **Microsoft Edge WebView2 Runtime**<br>*(Windows 11은 OS 기본 탑재, Windows 10은 자동 설치)* | 최신 안정화 버전 WebView2 Runtime |
-| **외부 의존성** | **전혀 없음** (Python, PyTorch, CUDA, Hugging Face 설치 불필요, `eg2-rag.exe` 단독 자립) | 에디터 연동 시 VS Code 선택 설치 권장 |
+| **운영체제 (OS)** | **Windows 10/11 64-bit** (버전 21H2 이상)<br>또는 **macOS 13+** (Ventura / Sonoma / Sequoia) | **Windows 11 64-bit** (23H2 이상)<br>또는 **macOS 14/15** (Apple Silicon) |
+| **프로세서 (CPU)** | Intel Core i3/i5 8세대 이상, AMD Ryzen 3000번대 이상<br>또는 **Apple Silicon M1** 이상 | **Intel Core Ultra 5 / 7 / 9** (Meteor/Lunar/Arrow Lake)<br>또는 **Apple M2 / M3 / M4** |
+| **신경망 가속기 (NPU)** | **필수 아님** (CPU 단독으로 쾌적 구동) | **Intel(R) AI Boost NPU** (Windows Level Zero)<br>또는 **Apple Neural Engine / Metal** (macOS) |
+| **시스템 메모리 (RAM)** | **8 GB RAM** 이상 | **16 GB ~ 32 GB RAM** 이상 (LPDDR5x / 통합 메모리) |
+| **저장 공간 (Storage)** | **2 GB 이상의 여유 공간**<br>(바이너리 21MB + 벡터 DB 및 모델 캐시) | **고속 NVMe SSD**<br>(5 GB 이상의 여유 공간) |
+| **웹뷰 런타임** | **Microsoft Edge WebView2** (Windows)<br>또는 **WebKit / WKWebView** (macOS) | OS 기본 내장 최신 웹뷰 런타임 |
+| **외부 의존성** | **전혀 없음** (Python, PyTorch, CUDA, Hugging Face 설치 불필요, 단독 자립) | 에디터 연동 시 VS Code 선택 설치 권장 |
 
 ---
 
-## 🛠️ 개발 및 빌드 환경 (AzovGBP 기준)
+## 🛠️ 개발 및 빌드 환경
 
-* **운영체제:** Windows 11 Home 26H2 (Build 26300.9711)
-* **프로세서:** Intel Core Ultra 7 155H (16코어 22스레드)
-* **메모리:** 32GB RAM
-* **그래픽 / NPU:** Intel Arc Graphics & Intel AI Boost NPU
+* **지원 운영체제:** Windows 11 (x86_64) & macOS 13+ (Apple Silicon arm64)
+* **권장 사양:** Intel Core Ultra 7 155H 또는 Apple Silicon M1/M2/M3/M4, 16GB+ RAM
 * **필수 도구:**
-  * Rust (1.80+ / Edition 2021, `x86_64-pc-windows-msvc`)
-  * Node.js (v20+ / v24) & pnpm 또는 npm
-  * WebView2 Runtime (Windows 11 기본 탑재)
+  * Rust (1.80+ / Edition 2021)
+  * Node.js (v20+) & npm
+  * WebView2 Runtime (Windows) 또는 Xcode Command Line Tools (macOS)
 
 ```bash
 # 프론트엔드 의존성 설치
@@ -234,12 +231,15 @@ cargo tauri build
 
 ## 📚 프로젝트 문서 및 가이드 (`doc/`)
 
-프로젝트 기획, UI/UX 설계, 작업 계획 및 NPU 하드웨어 구현 사양 문서는 [`doc/`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/) 폴더에 정리되어 있습니다:
-* [**`RAG_EG2_문제점_및_해결_보고서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_문제점_및_해결_보고서.md): 개발·테스트 과정에서 발생했던 핵심 9대 이슈(더블클릭 크래시, NPU 미점유, I/O 병목, 창 제어, 인스펙터 오버랩, 이미지/미디어 렌더링 등) 분석 및 해결 가이드
-* [**`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/NPU_Intel_AI_Boost_구현_및_사양_가이드.md): Intel(R) AI Boost NPU 하드웨어 사양, Level Zero API 연동, 윈도우즈 작업관리자 Compute 엔진 구동 및 타 프로젝트 재사용 레퍼런스 가이드
-* [**`RAG_EmbeddingGemma2_기획서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EmbeddingGemma2_기획서.md) (v5.1.0): 제품 기획 및 요구사항 명세
-* [**`RAG_EG2_앱작성_작업계획서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_앱작성_작업계획서.md) (v2.0.0): 아키텍처 및 구현 완료 보고서 (테스트 환경 `test/RAG_EG2`, `test/target` 명세 포함)
-* [**`RAG_EG2_UI_UX_지침서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_UI_UX_지침서.md) (v2.3.0): 윈도우 11 네이티브 디자인 및 반응형 인터랙션 가이드
+프로젝트 기획, UI/UX 설계, 작업 계획, NPU 하드웨어 구현 사양 및 macOS 통합 문서는 [`doc/`](./doc/) 폴더에 정리되어 있습니다:
+* [**`RAG_EG2_문제점_및_해결_보고서.md`**](./doc/RAG_EG2_문제점_및_해결_보고서.md): 개발·테스트 과정에서 발생했던 핵심 10대 이슈 분석 및 해결 가이드
+* [**`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`**](./doc/NPU_Intel_AI_Boost_구현_및_사양_가이드.md): Intel(R) AI Boost NPU 하드웨어 사양, Level Zero API 연동 및 윈도우즈 작업관리자 가속 가이드
+* [**`RAG_EG2_macOS_M1_사양_및_아키텍처_명세서.md`**](./doc/RAG_EG2_macOS_M1_사양_및_아키텍처_명세서.md): Apple Silicon M1+ 사양 및 단일 프로젝트 통합 아키텍처 명세서
+* [**`RAG_EG2_macOS_통합_구현_작업계획서.md`**](./doc/RAG_EG2_macOS_통합_구현_작업계획서.md): macOS 크로스 플랫폼 구현 Step-by-Step 작업계획서
+* [**`RAG_EG2_macOS_무결점_빌드_및_오류방지_가이드.md`**](./doc/RAG_EG2_macOS_무결점_빌드_및_오류방지_가이드.md): 로컬 Mac 미보유 환경 대응 10대 에러 차단 및 GitHub Actions 무인 검증 가이드
+* [**`RAG_EmbeddingGemma2_기획서.md`**](./doc/RAG_EmbeddingGemma2_기획서.md): 제품 기획 및 요구사항 명세
+* [**`RAG_EG2_앱작성_작업계획서.md`**](./doc/RAG_EG2_앱작성_작업계획서.md): 아키텍처 및 구현 완료 보고서
+* [**`RAG_EG2_UI_UX_지침서.md`**](./doc/RAG_EG2_UI_UX_지침서.md): 데스크톱 네이티브 디자인 및 반응형 인터랙션 가이드
 
 ---
 

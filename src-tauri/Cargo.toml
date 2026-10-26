@@ -2,7 +2,7 @@
 name = "eg2-rag"
 version = "0.1.0"
 description = "High-performance Local Semantic Search & MCP Agent for Windows 11 & macOS Apple Silicon"
-authors = ["azovlive"]
+authors = ["eg2-rag developers"]
 edition = "2021"
 
 [build-dependencies]

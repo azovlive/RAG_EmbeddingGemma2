@@ -31,34 +31,45 @@ pub fn get_default_base_dir() -> PathBuf {
         }
     }
 
-    // 2. Check local test directory next to executable
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            let local_test = parent.join("test").join("RAG_EG2");
-            if local_test.join("config.toml").exists() {
-                return local_test;
+    // 2. Check CARGO_MANIFEST_DIR (active during cargo test / cargo run)
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let p = PathBuf::from(manifest_dir);
+        if let Some(parent) = p.parent() {
+            let manifest_test = parent.join("test").join("RAG_EG2");
+            if manifest_test.join("config.toml").exists() {
+                return dunce::canonicalize(&manifest_test).unwrap_or(manifest_test);
             }
         }
     }
 
-    // 3. Check local test directory in working directory
-    let local_test_cur = PathBuf::from("test").join("RAG_EG2");
-    if local_test_cur.join("config.toml").exists() {
-        return dunce::canonicalize(&local_test_cur).unwrap_or(local_test_cur);
+    // 3. Check local test directory in working directory or parent
+    for base in &[PathBuf::from("."), PathBuf::from("..")] {
+        let local_test = base.join("test").join("RAG_EG2");
+        if local_test.join("config.toml").exists() {
+            return dunce::canonicalize(&local_test).unwrap_or(local_test);
+        }
+    }
+
+    // 4. Check executable parent
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            for base in &[parent.to_path_buf(), parent.parent().unwrap_or(parent).to_path_buf()] {
+                let local_test = base.join("test").join("RAG_EG2");
+                if local_test.join("config.toml").exists() {
+                    return dunce::canonicalize(&local_test).unwrap_or(local_test);
+                }
+            }
+        }
     }
 
     #[cfg(target_os = "windows")]
     {
-        let win_test = PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\RAG_EG2");
-        if win_test.exists() {
-            return win_test;
-        }
         if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
             let app_dir = PathBuf::from(local_app_data).join("eg2-rag");
             let _ = std::fs::create_dir_all(&app_dir);
             return app_dir;
         }
-        return win_test;
+        PathBuf::from(r"C:\RAG_EG2")
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -67,7 +78,7 @@ pub fn get_default_base_dir() -> PathBuf {
             let mac_app_dir = PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("com.azovlive.eg2rag");
+                .join("com.eg2rag.app");
             let _ = std::fs::create_dir_all(&mac_app_dir);
             return mac_app_dir;
         }
@@ -100,20 +111,42 @@ pub struct IndexingConfig {
 impl Default for IndexingConfig {
     fn default() -> Self {
         let mut target_paths = Vec::new();
-        // Default target directory specified for testing prior to production release
-        let test_target = PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target");
-        if test_target.exists() {
+
+        // 1. Check CARGO_MANIFEST_DIR (active during cargo test / cargo run)
+        let mut test_target = None;
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let p = PathBuf::from(manifest_dir);
+            if let Some(parent) = p.parent() {
+                let candidate = parent.join("test").join("target");
+                if candidate.exists() {
+                    test_target = Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
+                }
+            }
+        }
+
+        // 2. Check relative candidate paths
+        if test_target.is_none() {
+            for base in &[PathBuf::from("."), PathBuf::from("..")] {
+                let candidate = base.join("test").join("target");
+                if candidate.exists() {
+                    test_target = Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
+                    break;
+                }
+            }
+        }
+
+        if let Some(target) = test_target {
             target_paths.push(TargetFolder {
                 name: "TestTarget".to_string(),
-                path: test_target,
+                path: target,
                 enabled: true,
             });
         } else if let Ok(user_profile) = std::env::var("USERPROFILE") {
-            let one_drive = PathBuf::from(&user_profile).join("OneDrive");
-            if one_drive.exists() {
+            let docs = PathBuf::from(&user_profile).join("Documents");
+            if docs.exists() {
                 target_paths.push(TargetFolder {
-                    name: "OneDrive".to_string(),
-                    path: one_drive,
+                    name: "Documents".to_string(),
+                    path: docs,
                     enabled: true,
                 });
             }
@@ -241,22 +274,12 @@ impl Default for AppConfig {
             bundles: vec![
                 KnowledgeBundle {
                     id: "python-code".to_string(),
-                    name: "파이썬 소스코드".to_string(),
+                    name: "파이썬 묶음".to_string(),
                     description: "Python 스크립트 및 주피터 노트북 파일 선별".to_string(),
                     icon: "FileCode".to_string(),
-                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target\python_project")],
+                    paths: vec![],
                     preset: "python".to_string(),
                     extensions: vec!["py".to_string(), "ipynb".to_string(), "pyi".to_string()],
-                    enabled: true,
-                },
-                KnowledgeBundle {
-                    id: "cpp-code".to_string(),
-                    name: "C/C++ 소스코드".to_string(),
-                    description: "C 및 C++ 헤더/소스 파일 선별".to_string(),
-                    icon: "Cpu".to_string(),
-                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target\cpp_project")],
-                    preset: "cpp".to_string(),
-                    extensions: vec!["cpp".to_string(), "hpp".to_string(), "c".to_string(), "h".to_string(), "cc".to_string()],
                     enabled: true,
                 },
                 KnowledgeBundle {
@@ -264,7 +287,7 @@ impl Default for AppConfig {
                     name: "마크다운 문서/메모".to_string(),
                     description: "옵시디언 및 마크다운 지식 베이스".to_string(),
                     icon: "BookOpen".to_string(),
-                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target")],
+                    paths: vec![],
                     preset: "markdown".to_string(),
                     extensions: vec!["md".to_string(), "markdown".to_string()],
                     enabled: true,
@@ -274,7 +297,7 @@ impl Default for AppConfig {
                     name: "이미지 미디어".to_string(),
                     description: "PNG, JPG, SVG, WebP 등 이미지 미디어 선별".to_string(),
                     icon: "Image".to_string(),
-                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target")],
+                    paths: vec![],
                     preset: "image".to_string(),
                     extensions: vec![
                         "png".to_string(), "jpg".to_string(), "jpeg".to_string(), "gif".to_string(),
@@ -287,7 +310,7 @@ impl Default for AppConfig {
                     name: "동영상 미디어".to_string(),
                     description: "MP4, WebM, MKV 등 영상 미디어 선별".to_string(),
                     icon: "Video".to_string(),
-                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target")],
+                    paths: vec![],
                     preset: "video".to_string(),
                     extensions: vec![
                         "mp4".to_string(), "webm".to_string(), "mkv".to_string(), "avi".to_string(),

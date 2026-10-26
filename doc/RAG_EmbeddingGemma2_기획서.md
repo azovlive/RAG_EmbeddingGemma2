@@ -3,7 +3,7 @@
 * **프로젝트명:** `eg2-rag` (`RAG_EmbeddingGemma2`)
 * **문서 버전:** v5.1.0 (색인 대상 원본 파일 절대 무훼손(Zero-Modification) 및 읽기 전용 불변성 헌법 반영)
 * **작성 일자:** 2026-10-26
-* **기준 타겟 기기:** `AzovGBP` (Intel Core Ultra 7 155H, 32GB RAM, Intel Arc Graphics, **Intel AI Boost NPU**)
+* **기준 타겟 기기:** Intel Core Ultra 7 155H, 32GB RAM, Intel Arc Graphics, **Intel AI Boost NPU**
 * **기준 타겟 OS:** **Windows 11 Home 26H2 (OS 빌드 26300.9711, x86_64-pc-windows-msvc)**
 * **핵심 언어/아키텍처:**
   * **코어 엔진:** Pure Rust (Edition 2021, 비동기 런타임 `tokio`), 외부 Python 런타임 의존성 0%
@@ -22,8 +22,8 @@
   * 모델 및 토크나이저 캐시: `{DATA_DIR}\models`
   * 사용자 설정 파일: `{DATA_DIR}\config.toml`
 * **연계 표준 문서:**
-  * 앱작성 작업계획서: [`RAG_EG2_앱작성_작업계획서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/RAG_EG2_앱작성_작업계획서.md)
-  * UI/UX 설계 및 데스크톱 창 규격 지침: [`RAG_EG2_UI_UX_지침서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/RAG_EG2_UI_UX_지침서.md)
+  * 앱작성 작업계획서: [`RAG_EG2_앱작성_작업계획서.md`](./RAG_EG2_앱작성_작업계획서.md)
+  * UI/UX 설계 및 데스크톱 창 규격 지침: [`RAG_EG2_UI_UX_지침서.md`](./RAG_EG2_UI_UX_지침서.md)
   * 프론트엔드 최우선 헌법: `antigravity_ui_ux_architecture_rules.md`
 
 ---
@@ -50,8 +50,8 @@ UI/UX 지침서의 "정확한 코드 라인 번호(`L142-168`) 표시", "VS Code
 | 필드명 | Arrow 데이터 타입 | 설명 및 용도 |
 | :--- | :--- | :--- |
 | `id` | `Utf8` | `xxh3(normalized_path + chunk_index)` 고유 ID |
-| `file_path` | `Utf8` | **소문자 및 슬래시(`/`)로 정규화된 절대 경로** (예: `c:/users/azovl/project/main.py`) |
-| `display_path` | `Utf8` | UI 표시 및 탐색기/에디터 연동용 원본 윈도우 경로 (예: `C:\Users\azovl\Project\main.py`) |
+| `file_path` | `Utf8` | **소문자 및 슬래시(`/`)로 정규화된 절대 경로** (예: `c:/users/username/project/main.py`) |
+| `display_path` | `Utf8` | UI 표시 및 탐색기/에디터 연동용 원본 윈도우 경로 (예: `C:\Users\username\Project\main.py`) |
 | `file_name` | `Utf8` | 파일명 (예: `main.py`) |
 | `ext` | `Utf8` | 점(`.`) 제외 소문자 확장자 (예: `py`, `cpp`, `rs`) |
 | `lang` | `Utf8` | 언어 식별자 (`python`, `cpp`, `rust`, `markdown`, `pdf`, `text`) |
@@ -160,8 +160,8 @@ models_dir = "C:\\RAG_EG2\\models"
 
 [indexing]
 target_paths = [
-    { name = "OneDrive", path = "C:\\Users\\azovl\\OneDrive", enabled = true },
-    { name = "iCloud", path = "C:\\Users\\azovl\\iCloudDrive", enabled = true },
+    { name = "OneDrive", path = "C:\\Users\\username\\OneDrive", enabled = true },
+    { name = "iCloud", path = "C:\\Users\\username\\iCloudDrive", enabled = true },
     { name = "WorkDev", path = "D:\\DevProjects", enabled = true }
 ]
 exclude_patterns = [".git", "node_modules", "target", "dist", "__pycache__", "$Recycle.Bin", "Temp"]
@@ -173,7 +173,7 @@ name = "파이썬 머신러닝 & 알고리즘 코드"
 description = "AI 프로젝트 내 Python 스크립트 및 주피터 노트북 파일만 선별 참조"
 icon = "FileCode"
 paths = [
-    "C:\\Users\\azovl\\OneDrive\\Antigravity\\Project"
+    "C:\\Users\\username\\Documents\\Projects"
 ]
 preset = "python"
 extensions = ["py", "ipynb", "pyi"]
@@ -197,7 +197,7 @@ name = "개인 옵시디언 지식 베이스"
 description = "옵시디언 볼트 내 마크다운 메모만 선별"
 icon = "BookOpen"
 paths = [
-    "C:\\Users\\azovl\\OneDrive\\ObsidianVault"
+    "C:\\Users\\username\\Documents\\ObsidianVault"
 ]
 preset = "markdown"
 extensions = ["md"]
@@ -290,7 +290,7 @@ flowchart TD
 
 ### 5.3. 디바이스 오케스트레이션 및 하드웨어 매핑
 
-사용자의 PC(`AzovGBP`: Intel Core Ultra 7 155H, 32GB RAM, Intel Arc Graphics, Intel AI Boost NPU) 환경에 최적화된 3단계 가속 전략:
+테스트 PC (Intel Core Ultra 7 155H, 32GB RAM, Intel Arc Graphics, Intel AI Boost NPU) 환경에 최적화된 3단계 가속 전략:
 
 | 디바이스 모드 | 처리 엔진 | 처리량 (Throughput) | 전력 소모 | 멀티태스킹 간섭 | 권장 사용 시나리오 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -383,4 +383,4 @@ EmbeddingGemma 2의 기술적 배경, 지원 언어, MRL 벤치마크 점수 및
 
 ## 9. 연계 상세 구현 계획
 
-본 기획서의 세부 구현 순서, 파일별 작성 명세, 컴파일 검증 및 단위 테스트 기준은 동봉된 작업계획서인 [`RAG_EG2_앱작성_작업계획서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/RAG_EG2_앱작성_작업계획서.md)에 의거하여 순차적으로 수행됩니다.
+본 기획서의 세부 구현 순서, 파일별 작성 명세, 컴파일 검증 및 단위 테스트 기준은 동봉된 작업계획서인 [`RAG_EG2_앱작성_작업계획서.md`](./RAG_EG2_앱작성_작업계획서.md)에 의거하여 순차적으로 수행됩니다.

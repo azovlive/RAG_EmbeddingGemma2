@@ -42,7 +42,7 @@ flowchart LR
 name = "eg2-rag"
 version = "0.1.0"
 description = "High-performance Local Semantic Search & MCP Agent for Windows 11 & macOS Apple Silicon"
-authors = ["azovlive"]
+authors = ["eg2-rag developers"]
 edition = "2021"
 
 [build-dependencies]
@@ -689,16 +689,12 @@ pub fn get_default_base_dir() -> PathBuf {
 
     #[cfg(target_os = "windows")]
     {
-        let win_test = PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\RAG_EG2");
-        if win_test.exists() {
-            return win_test;
-        }
         if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
             let app_dir = PathBuf::from(local_app_data).join("eg2-rag");
             let _ = std::fs::create_dir_all(&app_dir);
             return app_dir;
         }
-        return win_test;
+        PathBuf::from(r"C:\RAG_EG2")
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -707,7 +703,7 @@ pub fn get_default_base_dir() -> PathBuf {
             let mac_app_dir = PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("com.azovlive.eg2rag");
+                .join("com.eg2rag.app");
             let _ = std::fs::create_dir_all(&mac_app_dir);
             return mac_app_dir;
         }
@@ -724,7 +720,7 @@ pub fn get_default_base_dir() -> PathBuf {
 impl Default for IndexingConfig {
     fn default() -> Self {
         let mut target_paths = Vec::new();
-        let test_target = PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target");
+        let test_target = PathBuf::from("test").join("target");
         if test_target.exists() {
             target_paths.push(TargetFolder {
                 name: "TestTarget".to_string(),
@@ -912,7 +908,7 @@ macOS `.app` 및 `.dmg` 패키징을 위해 `bundle.icon` 배열을 명시합니
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "eg2-rag",
   "version": "0.1.0",
-  "identifier": "com.azovlive.eg2rag",
+  "identifier": "com.eg2rag.app",
   "build": {
     "frontendDist": "../src-ui/dist"
   },

@@ -106,7 +106,7 @@ flowchart TD
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ [🐍 model_trainer.py]  [Func: def backward_pass()]  [🟢 95.1%] [언어: Python] │
-│ C:\Users\azovl\OneDrive\Antigravity\Project\models\model_trainer.py:L142-168  │
+│ C:\Projects\AI\models\model_trainer.py:L142-168  │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ 142 │ def backward_pass(self, loss: torch.Tensor, optimizer: Optimizer):     │
 │ 143 │     """역전파 경사도 계산 및 NPU 가속 그래디언트 클리핑 수행"""         │

@@ -240,7 +240,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                   />
                   <input
                     type="text"
-                    placeholder="경로 입력 (예: C:\Users\azovl\OneDrive\MyDocs)"
+                    placeholder="경로 입력 (예: C:\Users\username\Documents)"
                     value={newFolderPath}
                     onChange={(e) => setNewFolderPath(e.target.value)}
                     className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-xs font-mono outline-none"

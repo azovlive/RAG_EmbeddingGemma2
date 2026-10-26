@@ -3,8 +3,8 @@
 * **문서명:** `RAG_EG2_앱작성_작업계획서.md`
 * **버전:** v2.0.0 (전체 6-Step 엔지니어링 구현 완료, 실증 테스트 환경 명세 및 미디어 미리보기 파이프라인 반영)
 * **작성 일자:** 2026-10-26
-* **기반 문서:** [`RAG_EmbeddingGemma2_기획서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EmbeddingGemma2_기획서.md), [`RAG_EG2_UI_UX_지침서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_UI_UX_지침서.md), [`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/NPU_Intel_AI_Boost_구현_및_사양_가이드.md), [`RAG_EG2_문제점_및_해결_보고서.md`](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_문제점_및_해결_보고서.md)
-* **기준 타겟 기기:** `AzovGBP` (Intel Core Ultra 7 155H, 32GB LPDDR5x RAM, Intel Arc Graphics, **Intel AI Boost NPU**)
+* **기반 문서:** [`RAG_EmbeddingGemma2_기획서.md`](./RAG_EmbeddingGemma2_기획서.md), [`RAG_EG2_UI_UX_지침서.md`](./RAG_EG2_UI_UX_지침서.md), [`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`](./NPU_Intel_AI_Boost_구현_및_사양_가이드.md), [`RAG_EG2_문제점_및_해결_보고서.md`](./RAG_EG2_문제점_및_해결_보고서.md)
+* **기준 타겟 기기:** Intel Core Ultra 7 155H, 32GB LPDDR5x RAM, Intel Arc Graphics, **Intel AI Boost NPU**
 * **기준 타겟 OS:** **Windows 11 Home 26H2 (OS 빌드 26300.9711, x86_64-pc-windows-msvc)**
 * **목적:** 본 문서는 `eg2-rag` 프로젝트의 설계 계획과 실제 구현된 소프트웨어 구성, 원본 파일 무훼손(Zero-Modification) 헌법 검증, 그리고 **개발 및 검증을 위해 구축된 테스트 환경(`test/RAG_EG2`, `test/target`)의 상세 구조**를 영구 기록하는 엔지니어링 실행 보고서입니다.
 
@@ -104,7 +104,7 @@ flowchart TD
 본 프로젝트는 사용자의 실제 호스트 운영 환경(`C:\RAG_EG2`, 개인 클라우드 드라이브)을 일절 건드리지 않고, 모든 파이프라인의 기능과 안전성을 독립적으로 검증할 수 있도록 **프로젝트 내부에 전용 테스트 환경을 구축**하여 검증을 진행했습니다.
 
 ```
-c:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\
+<PROJECT_ROOT>\
 ├── test\
 │   ├── RAG_EG2\               <-- [환경 A] 완전 격리된 테스트 런타임 디렉토리
 │   │   ├── config.toml         <-- 테스트 전용 설정 파일
@@ -170,8 +170,8 @@ c:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\
 
 ## 6. 관련 문서 링크
 
-* [**`README.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/README.md): 프로젝트 대표 개요, 모델 아키텍처 및 시스템 요구 사양
-* [**`RAG_EG2_문제점_및_해결_보고서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_문제점_및_해결_보고서.md): 개발 과정에서 해결된 9대 핵심 결함 분석 및 해결책
-* [**`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/NPU_Intel_AI_Boost_구현_및_사양_가이드.md): Intel AI Boost NPU 하드웨어/API 상세 사양서
-* [**`RAG_EmbeddingGemma2_기획서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EmbeddingGemma2_기획서.md): 비즈니스 및 기능 상세 기획서
-* [**`RAG_EG2_UI_UX_지침서.md`**](file:///c:/Users/azovl/OneDrive/Antigravity/Project/RAG_EmbeddingGemma2/doc/RAG_EG2_UI_UX_지침서.md): Windows 11 프레임리스 UI 설계 지침
+* [**`README.md`**](../README.md): 프로젝트 대표 개요, 모델 아키텍처 및 시스템 요구 사양
+* [**`RAG_EG2_문제점_및_해결_보고서.md`**](./RAG_EG2_문제점_및_해결_보고서.md): 개발 과정에서 해결된 10대 핵심 결함 분석 및 해결책
+* [**`NPU_Intel_AI_Boost_구현_및_사양_가이드.md`**](./NPU_Intel_AI_Boost_구현_및_사양_가이드.md): Intel AI Boost NPU 하드웨어/API 상세 사양서
+* [**`RAG_EmbeddingGemma2_기획서.md`**](./RAG_EmbeddingGemma2_기획서.md): 비즈니스 및 기능 상세 기획서
+* [**`RAG_EG2_UI_UX_지침서.md`**](./RAG_EG2_UI_UX_지침서.md): 데스크톱 프레임리스 UI 설계 지침
