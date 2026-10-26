@@ -64,11 +64,14 @@ impl Indexer {
                 if entry.file_type().is_file() {
                     let path = entry.path().to_path_buf();
 
-                    // Check exclude patterns
-                    let path_str = path.to_string_lossy();
-                    let excluded = conf.indexing.exclude_patterns.iter().any(|pattern| path_str.contains(pattern));
-                    if excluded {
-                        continue;
+                    // Check exclude patterns relative to target root
+                    if let Ok(rel) = path.strip_prefix(&target.path) {
+                        let excluded = conf.indexing.exclude_patterns.iter().any(|pattern| {
+                            rel.components().any(|c| c.as_os_str() == pattern.as_str())
+                        });
+                        if excluded {
+                            continue;
+                        }
                     }
 
                     // Check cloud placeholder (Zero-download invariant)

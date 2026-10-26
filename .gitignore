@@ -42,6 +42,12 @@ models/*.onnx
 models/*.bin
 *.lancedb/
 
+# Test runtime data & personal test vaults
+test/RAG_EG2/lancedb/
+test/RAG_EG2/models/
+test/target/Obsidian Vault/
+test/target/Gemini-Spark_DOC/
+
 # Environment
 .env
 .env.local

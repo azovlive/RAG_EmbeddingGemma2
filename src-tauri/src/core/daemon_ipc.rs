@@ -12,7 +12,7 @@ use crate::core::bundle::normalize_path_for_query;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\eg2-rag-daemon";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", content = "payload")]
 pub enum IpcRequest {
     Search {
