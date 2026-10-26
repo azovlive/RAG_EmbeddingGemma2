@@ -171,8 +171,12 @@ impl VectorDatabase {
 
     pub async fn get_chunks_for_file(&self, file_path: &str) -> Vec<DbChunk> {
         let lock = self.chunks.read().await;
+        let norm_target = file_path.replace('\\', "/").to_lowercase();
         lock.iter()
-            .filter(|c| c.file_path == file_path || c.display_path == file_path)
+            .filter(|c| {
+                c.file_path.replace('\\', "/").to_lowercase() == norm_target
+                    || c.display_path.replace('\\', "/").to_lowercase() == norm_target
+            })
             .cloned()
             .collect()
     }
@@ -201,7 +205,11 @@ impl VectorDatabase {
 
         // Fallback to DB stored content
         let lock = self.chunks.read().await;
-        let matched = lock.iter().find(|c| c.display_path == display_path && c.start_line == start_line);
+        let norm_target = display_path.replace('\\', "/").to_lowercase();
+        let matched = lock.iter().find(|c| {
+            (c.display_path == display_path || c.file_path.replace('\\', "/").to_lowercase() == norm_target)
+                && c.start_line == start_line
+        });
         if let Some(m) = matched {
             Ok(m.content.clone())
         } else {
@@ -211,7 +219,11 @@ impl VectorDatabase {
 
     pub async fn get_similar_files(&self, display_path: &str, top_k: usize) -> Result<Vec<SimilarFileResult>> {
         let lock = self.chunks.read().await;
-        let target_chunks: Vec<&DbChunk> = lock.iter().filter(|c| c.display_path == display_path).collect();
+        let norm_target = display_path.replace('\\', "/").to_lowercase();
+        let target_chunks: Vec<&DbChunk> = lock.iter().filter(|c| {
+            c.file_path.replace('\\', "/").to_lowercase() == norm_target
+                || c.display_path.replace('\\', "/").to_lowercase() == norm_target
+        }).collect();
         if target_chunks.is_empty() {
             return Ok(Vec::new());
         }
@@ -233,8 +245,9 @@ impl VectorDatabase {
         let mut file_scores: std::collections::HashMap<String, (String, String, f32)> = std::collections::HashMap::new();
 
         for chunk in lock.iter() {
-            if chunk.display_path == display_path {
-                continue;
+            let chunk_norm = chunk.file_path.replace('\\', "/").to_lowercase();
+            if chunk_norm == norm_target {
+                continue; // Skip chunks of the same file
             }
 
             let dot: f32 = chunk.vector.iter().zip(avg_vector.iter()).map(|(&a, &b)| a * b).sum();

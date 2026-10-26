@@ -308,12 +308,16 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                       if (e.target.value === "python") setNewBundleExts("py, ipynb, pyi");
                       if (e.target.value === "cpp") setNewBundleExts("cpp, hpp, c, h");
                       if (e.target.value === "markdown") setNewBundleExts("md, markdown");
+                      if (e.target.value === "image") setNewBundleExts("png, jpg, jpeg, gif, webp, bmp, svg, ico");
+                      if (e.target.value === "video") setNewBundleExts("mp4, webm, mkv, avi, mov, wmv, flv");
                     }}
                     className="px-3 py-1.5 rounded-lg bg-slate-900 border border-white/10 text-slate-100 text-xs outline-none"
                   >
                     <option value="python">Python 전용</option>
                     <option value="cpp">C/C++ 전용</option>
                     <option value="markdown">마크다운 문서 전용</option>
+                    <option value="image">이미지 미디어 전용</option>
+                    <option value="video">동영상 미디어 전용</option>
                     <option value="custom">사용자 지정</option>
                   </select>
                   <input

@@ -57,18 +57,20 @@ export const App: React.FC = () => {
     return () => window.removeEventListener("keydown", handleGlobalKeys);
   }, [selectedResult, isSettingsOpen]);
 
-  const handleSearch = async () => {
-    if (!query.trim()) {
+  const handleSearch = async (overrideBundleId?: string) => {
+    const q = query.trim();
+    if (!q) {
       setResults([]);
       setSearchLatencyMs(null);
       setActiveFilePath(null);
       return;
     }
 
+    const bundleToUse = overrideBundleId !== undefined ? overrideBundleId : selectedBundleId;
     setIsSearching(true);
     const start = performance.now();
     try {
-      const res = await api.search(query, selectedBundleId, 40);
+      const res = await api.search(q, bundleToUse, 40);
       setResults(res);
       setSearchLatencyMs(performance.now() - start);
       if (res.length > 0) {
@@ -134,7 +136,7 @@ export const App: React.FC = () => {
             onSelectBundle={(id) => {
               setSelectedBundleId(id);
               if (query.trim()) {
-                setTimeout(handleSearch, 50);
+                handleSearch(id);
               }
             }}
             onAddBundle={() => setIsSettingsOpen(true)}

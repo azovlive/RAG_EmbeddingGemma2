@@ -1,6 +1,6 @@
 import React from "react";
 import { KnowledgeBundle } from "../types";
-import { Code, FileCode, BookOpen, Layers, Plus } from "lucide-react";
+import { Code, FileCode, BookOpen, Layers, Plus, Image as ImageIcon, Video } from "lucide-react";
 
 interface BundleSelectorProps {
   bundles: KnowledgeBundle[];
@@ -23,6 +23,10 @@ export const BundleSelector: React.FC<BundleSelectorProps> = ({
         return <Code className="w-3.5 h-3.5 text-blue-400" />;
       case "markdown":
         return <BookOpen className="w-3.5 h-3.5 text-emerald-400" />;
+      case "image":
+        return <ImageIcon className="w-3.5 h-3.5 text-rose-400" />;
+      case "video":
+        return <Video className="w-3.5 h-3.5 text-purple-400" />;
       default:
         return <Layers className="w-3.5 h-3.5 text-sky-400" />;
     }

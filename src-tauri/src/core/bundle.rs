@@ -17,6 +17,14 @@ pub fn preset_to_extensions(preset: &str) -> Vec<String> {
         ],
         "markdown" => vec!["md".into(), "markdown".into()],
         "pdf" => vec!["pdf".into()],
+        "image" => vec![
+            "png".into(), "jpg".into(), "jpeg".into(), "gif".into(), "webp".into(),
+            "bmp".into(), "svg".into(), "ico".into(), "tiff".into(), "tif".into(), "avif".into()
+        ],
+        "video" => vec![
+            "mp4".into(), "webm".into(), "mkv".into(), "avi".into(), "mov".into(),
+            "wmv".into(), "flv".into(), "m4v".into()
+        ],
         _ => vec![],
     }
 }

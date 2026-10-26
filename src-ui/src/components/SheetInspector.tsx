@@ -43,7 +43,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
         .catch(console.error);
 
       // Load all chunks from this file
-      (api as any).getFileChunks?.(selectedResult.chunk.file_path)
+      api.getFileChunks(selectedResult.chunk.file_path)
         .then((chunks: DbChunk[]) => {
           if (chunks) setFileChunks(chunks);
         })
@@ -241,7 +241,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-            <span>유사 파일 ({similarFiles.length})</span>
+            <span>유사 파일 {similarFiles.length > 0 ? `(${similarFiles.length})` : ""}</span>
           </button>
           <button
             onClick={() => setActiveTab("chunks")}
@@ -252,7 +252,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-sky-400" />
-            <span>파일 내 청크 ({fileChunks.length})</span>
+            <span>파일 내 청크 {fileChunks.length > 0 ? `(${fileChunks.length})` : ""}</span>
           </button>
         </div>
 
@@ -311,7 +311,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
               </p>
               {similarFiles.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-500">
-                  유사한 파일 계산 중...
+                  유사한 파일이 없습니다.
                 </div>
               ) : (
                 similarFiles.map((sim, i) => {
@@ -357,17 +357,23 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
               <p className="text-xs text-slate-400 mb-1">
                 이 파일에서 추출된 모든 AST 구문/문서 청크 목록입니다.
               </p>
-              {fileChunks.map((fc, i) => (
-                <div key={i} className="p-3 rounded-lg bg-slate-950/70 border border-white/5 space-y-1">
-                  <div className="flex justify-between items-center text-[11px] font-mono">
-                    <span className="text-sky-400 font-bold">{fc.symbol || `청크 #${fc.chunk_index}`}</span>
-                    <span className="text-slate-500">L{fc.start_line}-L{fc.end_line}</span>
-                  </div>
-                  <pre className="text-[10px] font-mono text-slate-400 line-clamp-3 whitespace-pre-wrap">
-                    {fc.content}
-                  </pre>
+              {fileChunks.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  청크 데이터가 없습니다.
                 </div>
-              ))}
+              ) : (
+                fileChunks.map((fc, i) => (
+                  <div key={i} className="p-3 rounded-lg bg-slate-950/70 border border-white/5 space-y-1">
+                    <div className="flex justify-between items-center text-[11px] font-mono">
+                      <span className="text-sky-400 font-bold">{fc.symbol || `청크 #${fc.chunk_index}`}</span>
+                      <span className="text-slate-500">L{fc.start_line}-L{fc.end_line}</span>
+                    </div>
+                    <pre className="text-[10px] font-mono text-slate-400 line-clamp-3 whitespace-pre-wrap">
+                      {fc.content}
+                    </pre>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>

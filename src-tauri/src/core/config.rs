@@ -232,6 +232,32 @@ impl Default for AppConfig {
                     extensions: vec!["md".to_string(), "markdown".to_string()],
                     enabled: true,
                 },
+                KnowledgeBundle {
+                    id: "media-image".to_string(),
+                    name: "이미지 미디어".to_string(),
+                    description: "PNG, JPG, SVG, WebP 등 이미지 미디어 선별".to_string(),
+                    icon: "Image".to_string(),
+                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target")],
+                    preset: "image".to_string(),
+                    extensions: vec![
+                        "png".to_string(), "jpg".to_string(), "jpeg".to_string(), "gif".to_string(),
+                        "webp".to_string(), "bmp".to_string(), "svg".to_string(), "ico".to_string()
+                    ],
+                    enabled: true,
+                },
+                KnowledgeBundle {
+                    id: "media-video".to_string(),
+                    name: "동영상 미디어".to_string(),
+                    description: "MP4, WebM, MKV 등 영상 미디어 선별".to_string(),
+                    icon: "Video".to_string(),
+                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target")],
+                    preset: "video".to_string(),
+                    extensions: vec![
+                        "mp4".to_string(), "webm".to_string(), "mkv".to_string(), "avi".to_string(),
+                        "mov".to_string(), "wmv".to_string(), "flv".to_string()
+                    ],
+                    enabled: true,
+                },
             ],
             inference: InferenceConfig::default(),
             resource_governor: ResourceGovernorConfig::default(),

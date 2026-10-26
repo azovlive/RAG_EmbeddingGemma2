@@ -11,7 +11,10 @@ export const api = {
   getSimilarFiles: (filePath: string, topK?: number): Promise<SimilarFileResult[]> =>
     invoke("get_similar_files", { filePath, topK }),
 
-  getFileContext: (filePath: string): Promise<DbChunk[]> =>
+  getFileChunks: (filePath: string): Promise<DbChunk[]> =>
+    invoke("get_file_chunks", { filePath }),
+
+  getFileContext: (filePath: string): Promise<string> =>
     invoke("get_file_context", { filePath }),
 
   // Bundles

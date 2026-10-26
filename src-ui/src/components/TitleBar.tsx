@@ -38,15 +38,33 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
     }
   };
 
-  const handleMinimize = () => {
-    appWindow?.minimize();
+  const handleMinimize = async () => {
+    try {
+      await invoke("minimize_window");
+    } catch {
+      appWindow?.minimize();
+    }
   };
 
   const handleMaximize = async () => {
-    if (await appWindow?.isMaximized()) {
-      appWindow?.unmaximize();
-    } else {
-      appWindow?.maximize();
+    try {
+      await invoke("toggle_maximize_window");
+    } catch {
+      if (await appWindow?.isMaximized()) {
+        appWindow?.unmaximize();
+      } else {
+        appWindow?.maximize();
+      }
+    }
+  };
+
+  const handleStartDrag = async (e: React.MouseEvent) => {
+    if (e.buttons === 1) {
+      try {
+        await invoke("start_dragging_window");
+      } catch {
+        appWindow?.startDragging();
+      }
     }
   };
 
@@ -61,7 +79,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
   return (
     <header
       data-tauri-drag-region
-      className="h-10 w-full flex items-center justify-between px-3 select-none border-b border-white/5 bg-slate-900/80 backdrop-blur-md z-50 text-slate-300 text-xs"
+      onMouseDown={handleStartDrag}
+      onDoubleClick={handleMaximize}
+      className="h-10 w-full flex items-center justify-between px-3 select-none border-b border-white/5 bg-slate-900/80 backdrop-blur-md z-50 text-slate-300 text-xs cursor-default"
     >
       {/* Left: App Logo & Name */}
       <div data-tauri-drag-region className="flex items-center gap-2 font-medium tracking-wide shrink-0">
@@ -75,10 +95,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
       </div>
 
       {/* Center Drag Region */}
-      <div data-tauri-drag-region className="flex-1 h-full mx-4" />
+      <div data-tauri-drag-region onMouseDown={handleStartDrag} className="flex-1 h-full mx-4" />
 
       {/* Right: NPU Toggle & Window Controls */}
-      <div className="flex items-center gap-1.5 -mr-1 shrink-0">
+      <div
+        className="flex items-center gap-1.5 -mr-1 shrink-0 z-10"
+        onMouseDown={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
         {/* NPU Prefer Toggle Button */}
         <button
           onClick={handleToggleNpu}

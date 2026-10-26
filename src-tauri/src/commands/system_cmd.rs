@@ -142,6 +142,28 @@ pub async fn open_in_editor(file_path: String, line: Option<u32>) -> Result<(), 
 }
 
 #[tauri::command]
+pub async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<bool, String> {
+    let is_max = window.is_maximized().unwrap_or(false);
+    if is_max {
+        window.unmaximize().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        window.maximize().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+pub async fn start_dragging_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
