@@ -271,8 +271,43 @@ impl Indexer {
             .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
             .unwrap_or(0);
 
+        let is_image = matches!(
+            ext.as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico" | "tiff" | "tif" | "avif"
+        );
+
         // Parse chunks according to file extension
-        let chunks = if ext == "pdf" {
+        let chunks = if is_image {
+            let file_len = content_bytes.len();
+            let formatted_size = if file_len < 1024 {
+                format!("{} B", file_len)
+            } else if file_len < 1024 * 1024 {
+                format!("{:.1} KB", file_len as f64 / 1024.0)
+            } else {
+                format!("{:.1} MB", file_len as f64 / (1024.0 * 1024.0))
+            };
+
+            let content_desc = if ext == "svg" {
+                let svg_str = String::from_utf8_lossy(&content_bytes);
+                let snippet: String = svg_str.chars().take(1500).collect();
+                format!(
+                    "[SVG 이미지: {file_name}]\n형식: SVG 벡터 이미지\n크기: {formatted_size}\n경로: {display_path}\n미리보기 태그:\n{snippet}"
+                )
+            } else {
+                format!(
+                    "[이미지 파일: {file_name}]\n형식: {}\n크기: {formatted_size}\n경로: {display_path}",
+                    ext.to_uppercase()
+                )
+            };
+
+            vec![super::code_chunker::CodeChunk {
+                start_line: 1,
+                end_line: 1,
+                symbol: format!("[이미지] {file_name}"),
+                content: content_desc,
+                lang: "image".to_string(),
+            }]
+        } else if ext == "pdf" {
             PdfParser::parse_pdf(path)?
         } else {
             let content_str = String::from_utf8_lossy(&content_bytes);

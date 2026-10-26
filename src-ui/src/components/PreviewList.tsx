@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { SearchResult } from "../types";
+import { SearchResult, isImageFile } from "../types";
+import { api } from "../api";
+import { ImagePreview } from "./ImagePreview";
 import {
   ExternalLink,
   FolderOpen,
@@ -105,6 +107,8 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                 ? "text-sky-400 bg-sky-500/10 border-sky-500/20"
                 : "text-slate-400 bg-slate-500/10 border-slate-500/20";
 
+            const isImage = isImageFile(chunk.ext);
+
             // Slice content to user-selected previewLines
             const allLines = chunk.content.split("\n");
             const previewSlice = allLines.slice(0, previewLines);
@@ -138,7 +142,7 @@ export const PreviewList: React.FC<PreviewListProps> = ({
 
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[11px] font-mono text-slate-400">
-                      L{chunk.start_line} - L{chunk.end_line}
+                      {isImage ? `이미지 (${chunk.ext.toUpperCase()})` : `L${chunk.start_line} - L${chunk.end_line}`}
                     </span>
                     <span
                       className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${scoreColor}`}
@@ -166,47 +170,69 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                   </button>
                 </div>
 
-                {/* Code Preview Box Clamped to N Lines */}
-                <div className="bg-slate-950/80 rounded-lg p-2.5 border border-white/5 font-mono text-xs overflow-hidden relative">
-                  <div className="flex">
-                    {/* Line numbers column */}
-                    <div className="select-none pr-3 text-right text-slate-600 font-mono text-[11px] leading-relaxed shrink-0">
-                      {previewSlice.map((_, i) => (
-                        <div key={i}>{chunk.start_line + i}</div>
-                      ))}
+                {/* Content Preview: Image or Code */}
+                {isImage ? (
+                  <ImagePreview
+                    mode="thumbnail"
+                    filePath={chunk.file_path}
+                    fileName={chunk.file_name}
+                    ext={chunk.ext}
+                    onOpenInspector={() => onSelectResult(res)}
+                    onOpenDefault={() => api.openFileDefault(chunk.file_path)}
+                  />
+                ) : (
+                  <div className="bg-slate-950/80 rounded-lg p-2.5 border border-white/5 font-mono text-xs overflow-hidden relative">
+                    <div className="flex">
+                      {/* Line numbers column */}
+                      <div className="select-none pr-3 text-right text-slate-600 font-mono text-[11px] leading-relaxed shrink-0">
+                        {previewSlice.map((_, i) => (
+                          <div key={i}>{chunk.start_line + i}</div>
+                        ))}
+                      </div>
+
+                      {/* Code text */}
+                      <pre className="text-slate-200 text-[11px] leading-relaxed overflow-x-auto whitespace-pre font-mono flex-1 select-text">
+                        {previewSlice.join("\n")}
+                      </pre>
                     </div>
 
-                    {/* Code text */}
-                    <pre className="text-slate-200 text-[11px] leading-relaxed overflow-x-auto whitespace-pre font-mono flex-1 select-text">
-                      {previewSlice.join("\n")}
-                    </pre>
+                    {hasMoreLines && (
+                      <div className="pt-1 text-[10px] text-slate-500 italic flex justify-between items-center border-t border-white/5 mt-1.5">
+                        <span>... 외 {allLines.length - previewLines}줄 더 있음</span>
+                        <button
+                          onClick={() => onSelectResult(res)}
+                          className="text-sky-400 hover:underline flex items-center gap-1"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>전체 코드 펼쳐보기</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-
-                  {hasMoreLines && (
-                    <div className="pt-1 text-[10px] text-slate-500 italic flex justify-between items-center border-t border-white/5 mt-1.5">
-                      <span>... 외 {allLines.length - previewLines}줄 더 있음</span>
-                      <button
-                        onClick={() => onSelectResult(res)}
-                        className="text-sky-400 hover:underline flex items-center gap-1"
-                      >
-                        <Maximize2 className="w-3 h-3" />
-                        <span>전체 코드 펼쳐보기</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {/* Action Bar */}
                 <div className="flex items-center justify-between pt-1 text-xs">
                   <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => onOpenEditor(chunk.file_path, chunk.start_line)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
-                      title="VS Code 또는 기본 에디터로 열기"
-                    >
-                      <ExternalLink className="w-3 h-3 text-sky-400" />
-                      <span>열기</span>
-                    </button>
+                    {isImage ? (
+                      <button
+                        onClick={() => api.openFileDefault(chunk.file_path)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
+                        title="윈도우 기본 사진 뷰어로 열기"
+                      >
+                        <ExternalLink className="w-3 h-3 text-sky-400" />
+                        <span>사진 앱 열기</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onOpenEditor(chunk.file_path, chunk.start_line)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
+                        title="VS Code 또는 기본 에디터로 열기"
+                      >
+                        <ExternalLink className="w-3 h-3 text-sky-400" />
+                        <span>열기</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => onRevealExplorer(chunk.file_path)}
@@ -220,14 +246,14 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                     <button
                       onClick={(e) => handleCopyCode(e, chunk.id, chunk.content)}
                       className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
-                      title="전체 코드 청크 복사"
+                      title={isImage ? "이미지 파일 정보 복사" : "전체 코드 청크 복사"}
                     >
                       {copiedChunkId === chunk.id ? (
                         <Check className="w-3 h-3 text-emerald-400" />
                       ) : (
                         <Copy className="w-3 h-3" />
                       )}
-                      <span>{copiedChunkId === chunk.id ? "복사됨" : "코드 복사"}</span>
+                      <span>{copiedChunkId === chunk.id ? "복사됨" : isImage ? "정보 복사" : "코드 복사"}</span>
                     </button>
                   </div>
 

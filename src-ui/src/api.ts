@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AppConfig, DbChunk, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus } from "./types";
+import { AppConfig, DbChunk, ImageDataResponse, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus } from "./types";
+
+const imageCache = new Map<string, Promise<ImageDataResponse>>();
 
 export const api = {
   // Search
@@ -47,6 +49,19 @@ export const api = {
 
   openInEditor: (filePath: string, line?: number): Promise<void> =>
     invoke("open_in_editor", { filePath, line }),
+
+  openFileDefault: (filePath: string): Promise<void> =>
+    invoke("open_file_default", { filePath }),
+
+  getImageData: (filePath: string): Promise<ImageDataResponse> => {
+    if (!imageCache.has(filePath)) {
+      const promise = invoke<ImageDataResponse>("get_image_data", { filePath });
+      imageCache.set(filePath, promise);
+      // Evict on error so retry works
+      promise.catch(() => imageCache.delete(filePath));
+    }
+    return imageCache.get(filePath)!;
+  },
 
   getNpuPreference: (): Promise<boolean> =>
     invoke("get_npu_preference"),

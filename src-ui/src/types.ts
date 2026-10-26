@@ -87,3 +87,17 @@ export interface IndexingState {
   is_paused: boolean;
   total_chunks: number;
 }
+
+export interface ImageDataResponse {
+  data_url: string;
+  file_size: number;
+  formatted_size: string;
+  mime_type: string;
+  ext: string;
+}
+
+export const isImageFile = (ext?: string): boolean => {
+  if (!ext) return false;
+  const clean = ext.toLowerCase().replace(/^\./, "");
+  return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff", "tif", "avif"].includes(clean);
+};

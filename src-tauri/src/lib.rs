@@ -108,6 +108,8 @@ pub fn run() {
             crate::commands::config_cmd::remove_target_folder,
             crate::commands::config_cmd::check_first_run,
             crate::commands::system_cmd::get_system_status,
+            crate::commands::system_cmd::get_image_data,
+            crate::commands::system_cmd::open_file_default,
             crate::commands::system_cmd::reveal_in_explorer,
             crate::commands::system_cmd::open_in_editor,
             crate::commands::system_cmd::exit_app,

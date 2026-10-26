@@ -12,6 +12,76 @@ pub struct SystemStatus {
     pub total_chunks: usize,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImageDataResponse {
+    pub data_url: String,
+    pub file_size: u64,
+    pub formatted_size: String,
+    pub mime_type: String,
+    pub ext: String,
+}
+
+#[tauri::command]
+pub async fn get_image_data(file_path: String) -> Result<ImageDataResponse, String> {
+    use base64::prelude::*;
+    let path = std::path::Path::new(&file_path);
+    if !path.is_file() {
+        return Err(format!("파일이 존재하지 않습니다: {}", file_path));
+    }
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let mime_type = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "tiff" | "tif" => "image/tiff",
+        "avif" => "image/avif",
+        _ => return Err(format!("지원되지 않는 이미지 포맷입니다: .{}", ext)),
+    };
+
+    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    let file_size = metadata.len();
+    let formatted_size = if file_size < 1024 {
+        format!("{} B", file_size)
+    } else if file_size < 1024 * 1024 {
+        format!("{:.1} KB", file_size as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", file_size as f64 / (1024.0 * 1024.0))
+    };
+
+    if file_size > 50 * 1024 * 1024 {
+        return Err("50MB를 초과하는 대용량 이미지는 미리보기를 지원하지 않습니다.".to_string());
+    }
+
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let encoded = BASE64_STANDARD.encode(&bytes);
+    let data_url = format!("data:{};base64,{}", mime_type, encoded);
+
+    Ok(ImageDataResponse {
+        data_url,
+        file_size,
+        formatted_size,
+        mime_type: mime_type.to_string(),
+        ext,
+    })
+}
+
+#[tauri::command]
+pub async fn open_file_default(file_path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("파일이 존재하지 않습니다: {}", file_path));
+    }
+    let _ = Command::new("cmd")
+        .args(&["/C", "start", "", &file_path])
+        .spawn()
+        .map_err(|e| format!("기본 뷰어 실행 실패: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn get_system_status(
     state: State<'_, Arc<AppState>>,
