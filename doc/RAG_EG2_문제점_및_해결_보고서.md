@@ -16,6 +16,7 @@
 | **ISSUE-07** | **데이터 무결성** | 색인 도중 원본 파일 훼손 및 클라우드(OneDrive) 자동 다운로드 폭풍 위험 | 파일 접근 플래그 및 클라우드 자리표시자(Files On-Demand) 미식별 | **Critical** | **사전 예방 완료** |
 | **ISSUE-08** | **UI / 레이아웃** | 상세 인스펙터 클릭 시 화면 상단이 타이틀바 위로 올라가며 닫기 불가 | Sheet drawer가 `inset-y-0`로 생성되어 타이틀바 드래그 영역과 충돌 & 백드롭 부재 | **High** | **해결 완료** |
 | **ISSUE-09** | **미디어 / 렌더링** | 이미지 파일(PNG, JPG, SVG 등)이 바이너리 텍스트 코드로 색인·표시됨 | 이미지 파일을 텍스트 청커로 처리하여 바이너리 쓰레기 문자열 적재 & 이미지 뷰어 부재 | **High** | **해결 완료** |
+| **ISSUE-10** | **시스템 연동** | '탐색기에서 열기' 클릭 시 대상 파일 폴더 대신 '문서' 폴더 열림 | Explorer `/select,` 인자 전달 시 Rust 자동 따옴표 이스케이프 파싱 에러 | **Medium** | **해결 완료** |
 
 ---
 
@@ -352,6 +353,71 @@ if total == 0 {
    - `get_similar_files`와 `get_chunks_for_file`의 경로 정규화(`replace('\\', '/').to_lowercase()`) 완비.
    - `api.getFileChunks` 정식 바인딩.
    - 데이터가 있을 때만 `유사 파일 (N)`, `파일 내 청크 (N)`을 표시하고 0개일 때는 괄호 숫자 표기를 생략하여 불필요한 `(0)` 제거.
+
+---
+
+### [문제점 7 / ISSUE-10] '탐색기에서 열기(Reveal in Explorer)' 클릭 시 대상 폴더 대신 '문서(Documents)' 폴더가 열리는 결함
+
+#### 1. 현상 (Symptoms)
+- 검색 결과 카드 또는 상세 인스펙터 시트에서 **[탐색기에서 열기]** 버튼을 클릭했을 때, 실제 해당 파일이 위치한 폴더가 열리고 파일이 선택(Select)되어야 함에도 불구하고 엉뚱하게 Windows 기본 **`내 문서(C:\Users\<사용자>\Documents)`** 폴더가 열림.
+
+#### 2. 근본 원인 분석 (Root Causes)
+1. **Rust `std::process::Command`의 Windows 인자 이스케이핑 규칙과 Explorer 파서 충돌**:
+   - 기존 구현:
+     ```rust
+     let win_path = file_path.replace('/', "\\");
+     Command::new("explorer.exe")
+         .arg(format!("/select,\"{}\"", win_path))
+         .spawn();
+     ```
+   - Rust 표준 라이브러리의 `Command`는 Windows 환경에서 `CommandLineToArgvW` 규격에 맞춰 인자 문자열을 처리합니다. 인자 내부에 공백(Space)이나 따옴표(`"`)가 포함되어 있으면, Rust 런타임은 전체 인자를 바깥쪽 큰따옴표(`"`)로 감싸고 내부 따옴표를 `\"`로 치환합니다.
+   - 따라서 실제 OS에 전달된 명령줄은 다음과 같이 변형되었습니다:
+     ```cmd
+     explorer.exe "/select,\"C:\path with spaces\file.ext\""
+     ```
+   - 하지만 Windows `explorer.exe`는 표준 `CommandLineToArgvW` 파서가 아닌 **자체 스위치 파서**를 사용하며, `/select,` 스위치가 큰따옴표 내부에 감싸져 있거나 `\"` 이스케이프가 포함되어 있으면 `/select` 플래그 자체를 인식하지 못합니다.
+   - `explorer.exe`는 명령줄 인자 구문 분석에 실패하거나 잘못된 경로를 받으면 기본 안전 Fallback으로 **사용자의 `내 문서(Documents)` 폴더를 열도록 동작**합니다.
+2. **상대 경로 및 디렉터리 분기 처리 미흡**:
+   - 경로에 상대 경로 토큰(`..`, `.`)이 남아있거나 파일이 아닌 디렉터리일 때도 `/select,`를 무조건 붙일 경우 Explorer가 비정상 동작할 위험이 있었습니다.
+
+#### 3. 해결책 및 적용 코드 (Solution)
+1. **Windows 플랫폼 전용 `CommandExt::raw_arg()` 적용**:
+   - 표준 라이브러리의 자동 이스케이프(`"..."` 래핑)를 우회하여 Windows Explorer가 엄격하게 요구하는 무공백 콤마 구문(`explorer.exe /select,"C:\path\to\file.ext"`)을 원본 그대로 전달할 수 있도록 `std::os::windows::process::CommandExt`의 `raw_arg()` 메서드를 채택하였습니다.
+2. **`dunce::canonicalize()`를 통한 절대 경로 정규화**:
+   - `\\?\` UNC 확장 경로 접두사를 안전하게 제거하면서 절대 Windows 경로로 표준화하여 경로 인식 실패를 방지하였습니다.
+3. **폴더(Directory)와 파일(File) 분기 로직 적용**:
+   - 대상이 폴더인 경우 폴더 자체를 열고(`"C:\folder"`), 파일인 경우 해당 파일을 선택(`"/select,"C:\folder\file.ext""`)하도록 안전하게 분기하였습니다.
+
+```rust
+// src-tauri/src/commands/system_cmd.rs 수정 적용
+#[tauri::command]
+pub async fn reveal_in_explorer(file_path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("파일이 존재하지 않습니다: {}", file_path));
+    }
+
+    // \\?\ 접두사를 안전하게 정규화한 절대 경로 산출
+    let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("explorer.exe");
+        if canonical_path.is_dir() {
+            // 폴더인 경우 폴더 직접 열기
+            cmd.raw_arg(format!("\"{}\"", win_path));
+        } else {
+            // 파일인 경우 raw_arg를 사용하여 Rust의 CommandLineToArgvW 래핑을 우회하고
+            // Windows Explorer가 요구하는 정확한 /select,"경로" 구문 전송
+            cmd.raw_arg(format!(r#"/select,"{}""#, win_path));
+        }
+        cmd.spawn().map_err(|e| format!("탐색기 실행 실패: {}", e))?;
+    }
+
+    Ok(())
+}
+```
 
 ---
 

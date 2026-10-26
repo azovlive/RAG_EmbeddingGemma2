@@ -1,5 +1,7 @@
 use std::sync::Arc;
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::State;
 use serde::{Deserialize, Serialize};
 use crate::AppState;
@@ -75,8 +77,10 @@ pub async fn open_file_default(file_path: String) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("파일이 존재하지 않습니다: {}", file_path));
     }
+    let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
     let _ = Command::new("cmd")
-        .args(&["/C", "start", "", &file_path])
+        .args(&["/C", "start", "", &win_path])
         .spawn()
         .map_err(|e| format!("기본 뷰어 실행 실패: {}", e))?;
     Ok(())
@@ -103,15 +107,32 @@ pub async fn reveal_in_explorer(file_path: String) -> Result<(), String> {
         return Err(format!("파일이 존재하지 않습니다: {}", file_path));
     }
 
-    let win_path = file_path.replace('/', "\\");
-    let status = Command::new("explorer.exe")
-        .arg(format!("/select,\"{}\"", win_path))
-        .spawn();
+    // Canonicalize path to ensure clean absolute Windows path without \\?\ prefix
+    let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
 
-    match status {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("탐색기 실행 실패: {}", e)),
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("explorer.exe");
+        if canonical_path.is_dir() {
+            // If it's a directory, open the folder directly
+            cmd.raw_arg(format!("\"{}\"", win_path));
+        } else {
+            // explorer.exe requires `/select,"<path>"` without space after comma.
+            // Using standard .arg() causes Rust's CommandLineToArgvW escaping to wrap the entire
+            // argument in quotes ("/select,\"<path>\""), causing Explorer to fail parsing and default to 'Documents'.
+            // Using raw_arg ensures exact Windows Explorer command-line syntax.
+            cmd.raw_arg(format!(r#"/select,"{}""#, win_path));
+        }
+        cmd.spawn().map_err(|e| format!("탐색기 실행 실패: {}", e))?;
     }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = win_path;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -121,10 +142,13 @@ pub async fn open_in_editor(file_path: String, line: Option<u32>) -> Result<(), 
         return Err(format!("파일이 존재하지 않습니다: {}", file_path));
     }
 
+    let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let win_path = canonical_path.to_string_lossy().replace('/', "\\");
+
     // Try VS Code first if available
     let line_arg = match line {
-        Some(l) => format!("--goto {}:{}", file_path, l),
-        None => file_path.clone(),
+        Some(l) => format!("--goto \"{}:{}\"", win_path, l),
+        None => format!("\"{}\"", win_path),
     };
 
     let vscode = Command::new("cmd")
@@ -134,7 +158,7 @@ pub async fn open_in_editor(file_path: String, line: Option<u32>) -> Result<(), 
     if vscode.is_err() {
         // Fallback to default system opener
         let _ = Command::new("cmd")
-            .args(&["/C", "start", "", &file_path])
+            .args(&["/C", "start", "", &win_path])
             .spawn();
     }
 
