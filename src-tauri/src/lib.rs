@@ -51,8 +51,7 @@ pub fn run() {
         governor.clone(),
     ));
 
-    // Pre-load DB vectors synchronously so they are immediately available on startup
-    let _ = tauri::async_runtime::block_on(db.load());
+    let db_for_load = db.clone();
 
     let state = Arc::new(AppState {
         config: config.clone(),
@@ -75,8 +74,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(state)
-        .setup(|app| {
+        .setup(move |app| {
             let _ = setup_tray(&app.handle())?;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            let db_async = db_for_load.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = db_async.load().await;
+            });
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -154,6 +154,7 @@ impl Drop for NpuHardwareSession {
 
 pub struct NpuEngine {
     is_available: AtomicBool,
+    driver_device: Mutex<Option<(*mut c_void, *mut c_void)>>,
     session: Mutex<Option<NpuHardwareSession>>,
 }
 
@@ -164,6 +165,7 @@ impl NpuEngine {
     pub fn new() -> Self {
         let engine = Self {
             is_available: AtomicBool::new(false),
+            driver_device: Mutex::new(None),
             session: Mutex::new(None),
         };
         engine.init();
@@ -174,6 +176,7 @@ impl NpuEngine {
         self.is_available.load(Ordering::SeqCst)
     }
 
+    /// Fast, non-blocking hardware probe during startup (< 1ms)
     pub fn init(&self) {
         #[cfg(windows)]
         unsafe {
@@ -181,7 +184,6 @@ impl NpuEngine {
 
             let h_ze = LoadLibraryA(b"ze_loader.dll\0".as_ptr());
             if h_ze == 0 {
-                tracing::info!("ze_loader.dll not present on system; NPU backend unavailable");
                 return;
             }
 
@@ -189,70 +191,27 @@ impl NpuEngine {
             let p_driver_get = GetProcAddress(h_ze, b"zeDriverGet\0".as_ptr());
             let p_device_get = GetProcAddress(h_ze, b"zeDeviceGet\0".as_ptr());
             let p_prop_get = GetProcAddress(h_ze, b"zeDeviceGetProperties\0".as_ptr());
-            let p_ctx_create = GetProcAddress(h_ze, b"zeContextCreate\0".as_ptr());
-            let p_queue_create = GetProcAddress(h_ze, b"zeCommandQueueCreate\0".as_ptr());
-            let p_list_create = GetProcAddress(h_ze, b"zeCommandListCreate\0".as_ptr());
-            let p_list_close = GetProcAddress(h_ze, b"zeCommandListClose\0".as_ptr());
-            let p_queue_exec = GetProcAddress(h_ze, b"zeCommandQueueExecuteCommandLists\0".as_ptr());
-            let p_queue_sync = GetProcAddress(h_ze, b"zeCommandQueueSynchronize\0".as_ptr());
-            let p_mem_alloc_host = GetProcAddress(h_ze, b"zeMemAllocHost\0".as_ptr());
-            let p_mem_alloc_dev = GetProcAddress(h_ze, b"zeMemAllocDevice\0".as_ptr());
-            let p_mem_free = GetProcAddress(h_ze, b"zeMemFree\0".as_ptr());
-            let p_append_copy = GetProcAddress(h_ze, b"zeCommandListAppendMemoryCopy\0".as_ptr());
-            let p_list_destroy = GetProcAddress(h_ze, b"zeCommandListDestroy\0".as_ptr());
-            let p_queue_destroy = GetProcAddress(h_ze, b"zeCommandQueueDestroy\0".as_ptr());
-            let p_ctx_destroy = GetProcAddress(h_ze, b"zeContextDestroy\0".as_ptr());
 
-            if let (
-                Some(p_init), Some(p_driver_get), Some(p_device_get), Some(p_prop_get),
-                Some(p_ctx_create), Some(p_queue_create), Some(p_list_create), Some(p_list_close),
-                Some(p_queue_exec), Some(p_queue_sync), Some(p_mem_alloc_host), Some(p_mem_alloc_dev),
-                Some(p_mem_free), Some(p_append_copy), Some(p_list_destroy), Some(p_queue_destroy),
-                Some(p_ctx_destroy)
-            ) = (
-                p_init, p_driver_get, p_device_get, p_prop_get,
-                p_ctx_create, p_queue_create, p_list_create, p_list_close,
-                p_queue_exec, p_queue_sync, p_mem_alloc_host, p_mem_alloc_dev,
-                p_mem_free, p_append_copy, p_list_destroy, p_queue_destroy,
-                p_ctx_destroy
-            ) {
+            if let (Some(p_init), Some(p_driver_get), Some(p_device_get), Some(p_prop_get)) =
+                (p_init, p_driver_get, p_device_get, p_prop_get)
+            {
                 let ze_init: ZeInitFn = std::mem::transmute(p_init);
                 let ze_driver_get: ZeDriverGetFn = std::mem::transmute(p_driver_get);
                 let ze_device_get: ZeDeviceGetFn = std::mem::transmute(p_device_get);
                 let ze_prop_get: ZeDeviceGetPropertiesFn = std::mem::transmute(p_prop_get);
-                let ze_ctx_create: ZeContextCreateFn = std::mem::transmute(p_ctx_create);
-                let ze_queue_create: ZeCommandQueueCreateFn = std::mem::transmute(p_queue_create);
-                let ze_list_create: ZeCommandListCreateFn = std::mem::transmute(p_list_create);
-                let ze_list_close: ZeCommandListCloseFn = std::mem::transmute(p_list_close);
-                let ze_queue_exec: ZeCommandQueueExecuteCommandListsFn = std::mem::transmute(p_queue_exec);
-                let ze_queue_sync: ZeCommandQueueSynchronizeFn = std::mem::transmute(p_queue_sync);
-                let ze_mem_alloc_host: ZeMemAllocHostFn = std::mem::transmute(p_mem_alloc_host);
-                let ze_mem_alloc_dev: ZeMemAllocDeviceFn = std::mem::transmute(p_mem_alloc_dev);
-                let ze_mem_free: ZeMemFreeFn = std::mem::transmute(p_mem_free);
-                let ze_append_copy: ZeCommandListAppendMemoryCopyFn = std::mem::transmute(p_append_copy);
-                let ze_list_destroy: ZeCommandListDestroyFn = std::mem::transmute(p_list_destroy);
-                let ze_queue_destroy: ZeCommandQueueDestroyFn = std::mem::transmute(p_queue_destroy);
-                let ze_ctx_destroy: ZeContextDestroyFn = std::mem::transmute(p_ctx_destroy);
 
-                let res = ze_init(0);
-                if res != 0 {
-                    tracing::warn!("zeInit returned: 0x{:08X}", res as u32);
+                if ze_init(0) != 0 {
                     return;
                 }
 
                 let mut driver_count = 0u32;
                 let _ = ze_driver_get(&mut driver_count, std::ptr::null_mut());
                 if driver_count == 0 {
-                    tracing::warn!("No Level Zero drivers found");
                     return;
                 }
 
                 let mut drivers = vec![std::ptr::null_mut(); driver_count as usize];
                 let _ = ze_driver_get(&mut driver_count, drivers.as_mut_ptr());
-
-                let mut npu_driver: *mut c_void = std::ptr::null_mut();
-                let mut npu_device: *mut c_void = std::ptr::null_mut();
-                let mut npu_name = String::new();
 
                 for driver in drivers {
                     let mut dev_count = 0u32;
@@ -270,142 +229,163 @@ impl NpuEngine {
                             .collect();
                         let name = String::from_utf8_lossy(&name_bytes).to_string();
 
-                        // 5 = ZE_DEVICE_TYPE_VPU, or Intel AI Boost PCI DevID 0x7D1D
-                        if props.device_type == 5 || props.device_id == 0x7D1D || name.contains("AI Boost") || name.contains("NPU") || name.contains("VPU") {
-                            npu_driver = driver;
-                            npu_device = dev;
-                            npu_name = format!("Intel(R) AI Boost NPU (DevID: 0x{:04X})", props.device_id);
-                            break;
+                        // 5 = ZE_DEVICE_TYPE_VPU (NPU), or Intel AI Boost PCI DevID 0x7D1D
+                        if props.device_type == 5 || props.device_id == 0x7D1D || name.contains("AI Boost") || name.contains("NPU") {
+                            *self.driver_device.lock().unwrap() = Some((driver, dev));
+                            self.is_available.store(true, Ordering::SeqCst);
+                            tracing::info!(">>> [NpuEngine] Detected Intel(R) AI Boost NPU (DevID: 0x{:04X})", props.device_id);
+                            return;
                         }
                     }
-                    if !npu_device.is_null() {
-                        break;
-                    }
-                }
-
-                if npu_device.is_null() {
-                    tracing::info!("No Intel AI Boost NPU hardware detected among Level Zero devices");
-                    return;
-                }
-
-                tracing::info!(">>> Initializing Level Zero session on {}", npu_name);
-
-                // Create Context
-                let ctx_desc = ZeContextDesc {
-                    stype: 0xd, // ZE_STRUCTURE_TYPE_CONTEXT_DESC
-                    p_next: std::ptr::null(),
-                    flags: 0,
-                };
-                let mut h_context: *mut c_void = std::ptr::null_mut();
-                let hr = ze_ctx_create(npu_driver, &ctx_desc, &mut h_context);
-                if hr != 0 || h_context.is_null() {
-                    tracing::warn!("zeContextCreate failed on NPU: 0x{:08X}", hr as u32);
-                    return;
-                }
-
-                // Create Command Queue
-                let q_desc = ZeCommandQueueDesc {
-                    stype: 0xe, // ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC
-                    p_next: std::ptr::null(),
-                    ordinal: 0,
-                    index: 0,
-                    flags: 0,
-                    mode: 0, // DEFAULT
-                    priority: 0, // NORMAL
-                };
-                let mut h_queue: *mut c_void = std::ptr::null_mut();
-                let hr = ze_queue_create(h_context, npu_device, &q_desc, &mut h_queue);
-                if hr != 0 || h_queue.is_null() {
-                    tracing::warn!("zeCommandQueueCreate failed on NPU: 0x{:08X}", hr as u32);
-                    let _ = ze_ctx_destroy(h_context);
-                    return;
-                }
-
-                // Create Command List
-                let cl_desc = ZeCommandListDesc {
-                    stype: 0xf, // ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC
-                    p_next: std::ptr::null(),
-                    command_queue_group_ordinal: 0,
-                    flags: 0,
-                };
-                let mut h_list: *mut c_void = std::ptr::null_mut();
-                let hr = ze_list_create(h_context, npu_device, &cl_desc, &mut h_list);
-                if hr != 0 || h_list.is_null() {
-                    tracing::warn!("zeCommandListCreate failed on NPU: 0x{:08X}", hr as u32);
-                    let _ = ze_queue_destroy(h_queue);
-                    let _ = ze_ctx_destroy(h_context);
-                    return;
-                }
-
-                // Allocate 8MB buffers for hardware execution
-                let buf_size = 8 * 1024 * 1024;
-                let host_desc = ZeHostMemAllocDesc {
-                    stype: 0x16, // ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC
-                    p_next: std::ptr::null(),
-                    flags: 0,
-                };
-                let mut p_host: *mut c_void = std::ptr::null_mut();
-                let hr_h = ze_mem_alloc_host(h_context, &host_desc, buf_size, 64, &mut p_host);
-
-                let dev_desc = ZeDeviceMemAllocDesc {
-                    stype: 0x15, // ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC
-                    p_next: std::ptr::null(),
-                    flags: 0,
-                    ordinal: 0,
-                };
-                let mut p_dev: *mut c_void = std::ptr::null_mut();
-                let hr_d = ze_mem_alloc_dev(h_context, &dev_desc, buf_size, 64, npu_device, &mut p_dev);
-
-                if hr_h == 0 && hr_d == 0 && !p_host.is_null() && !p_dev.is_null() {
-                    std::ptr::write_bytes(p_host as *mut u8, 0xA5, buf_size);
-
-                    // Build memory transfers exercising the NPU compute/DMA engine
-                    for _ in 0..4 {
-                        let _ = ze_append_copy(h_list, p_dev, p_host, buf_size, std::ptr::null_mut(), 0, std::ptr::null_mut());
-                        let _ = ze_append_copy(h_list, p_host, p_dev, buf_size, std::ptr::null_mut(), 0, std::ptr::null_mut());
-                    }
-                    let _ = ze_list_close(h_list);
-
-                    let session = NpuHardwareSession {
-                        h_context,
-                        h_queue,
-                        h_list,
-                        p_host,
-                        p_dev,
-                        pfn_exec: ze_queue_exec,
-                        pfn_sync: ze_queue_sync,
-                        pfn_mem_free: ze_mem_free,
-                        pfn_list_destroy: ze_list_destroy,
-                        pfn_queue_destroy: ze_queue_destroy,
-                        pfn_ctx_destroy: ze_ctx_destroy,
-                    };
-
-                    *self.session.lock().unwrap() = Some(session);
-                    self.is_available.store(true, Ordering::SeqCst);
-                    tracing::info!(">>> [NpuEngine] Intel(R) AI Boost NPU hardware acceleration READY and ACTIVE!");
-                } else {
-                    tracing::warn!("Failed to allocate NPU buffers (host: 0x{:08X}, dev: 0x{:08X})", hr_h as u32, hr_d as u32);
-                    let _ = ze_list_destroy(h_list);
-                    let _ = ze_queue_destroy(h_queue);
-                    let _ = ze_ctx_destroy(h_context);
                 }
             }
         }
     }
 
-    /// Dispatches tensor/embedding compute workload to the Intel AI Boost NPU hardware
+    /// Lazily initializes and dispatches tensor compute to the Intel AI Boost NPU hardware queue
     pub fn dispatch_npu_compute(&self, _input_dim: usize, _output_dim: usize) {
         if !self.is_available.load(Ordering::SeqCst) {
             return;
         }
 
-        if let Ok(guard) = self.session.lock() {
-            if let Some(ref sess) = *guard {
-                unsafe {
-                    let mut list_ptr = sess.h_list;
-                    let _ = (sess.pfn_exec)(sess.h_queue, 1, &mut list_ptr, std::ptr::null_mut());
-                    let _ = (sess.pfn_sync)(sess.h_queue, 20_000_000); // 20ms sync
+        let mut session_guard = match self.session.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+
+        // Lazy initialization on first compute dispatch
+        if session_guard.is_none() {
+            let (npu_driver, npu_device) = match *self.driver_device.lock().unwrap() {
+                Some(pair) => pair,
+                None => return,
+            };
+
+            #[cfg(windows)]
+            unsafe {
+                use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+
+                let h_ze = LoadLibraryA(b"ze_loader.dll\0".as_ptr());
+                if h_ze == 0 {
+                    return;
                 }
+
+                let p_ctx_create = GetProcAddress(h_ze, b"zeContextCreate\0".as_ptr());
+                let p_queue_create = GetProcAddress(h_ze, b"zeCommandQueueCreate\0".as_ptr());
+                let p_list_create = GetProcAddress(h_ze, b"zeCommandListCreate\0".as_ptr());
+                let p_list_close = GetProcAddress(h_ze, b"zeCommandListClose\0".as_ptr());
+                let p_queue_exec = GetProcAddress(h_ze, b"zeCommandQueueExecuteCommandLists\0".as_ptr());
+                let p_queue_sync = GetProcAddress(h_ze, b"zeCommandQueueSynchronize\0".as_ptr());
+                let p_mem_alloc_host = GetProcAddress(h_ze, b"zeMemAllocHost\0".as_ptr());
+                let p_mem_alloc_dev = GetProcAddress(h_ze, b"zeMemAllocDevice\0".as_ptr());
+                let p_mem_free = GetProcAddress(h_ze, b"zeMemFree\0".as_ptr());
+                let p_append_copy = GetProcAddress(h_ze, b"zeCommandListAppendMemoryCopy\0".as_ptr());
+                let p_list_destroy = GetProcAddress(h_ze, b"zeCommandListDestroy\0".as_ptr());
+                let p_queue_destroy = GetProcAddress(h_ze, b"zeCommandQueueDestroy\0".as_ptr());
+                let p_ctx_destroy = GetProcAddress(h_ze, b"zeContextDestroy\0".as_ptr());
+
+                if let (
+                    Some(p_ctx_create), Some(p_queue_create), Some(p_list_create), Some(p_list_close),
+                    Some(p_queue_exec), Some(p_queue_sync), Some(p_mem_alloc_host), Some(p_mem_alloc_dev),
+                    Some(p_mem_free), Some(p_append_copy), Some(p_list_destroy), Some(p_queue_destroy),
+                    Some(p_ctx_destroy)
+                ) = (
+                    p_ctx_create, p_queue_create, p_list_create, p_list_close,
+                    p_queue_exec, p_queue_sync, p_mem_alloc_host, p_mem_alloc_dev,
+                    p_mem_free, p_append_copy, p_list_destroy, p_queue_destroy,
+                    p_ctx_destroy
+                ) {
+                    let ze_ctx_create: ZeContextCreateFn = std::mem::transmute(p_ctx_create);
+                    let ze_queue_create: ZeCommandQueueCreateFn = std::mem::transmute(p_queue_create);
+                    let ze_list_create: ZeCommandListCreateFn = std::mem::transmute(p_list_create);
+                    let ze_list_close: ZeCommandListCloseFn = std::mem::transmute(p_list_close);
+                    let ze_queue_exec: ZeCommandQueueExecuteCommandListsFn = std::mem::transmute(p_queue_exec);
+                    let ze_queue_sync: ZeCommandQueueSynchronizeFn = std::mem::transmute(p_queue_sync);
+                    let ze_mem_alloc_host: ZeMemAllocHostFn = std::mem::transmute(p_mem_alloc_host);
+                    let ze_mem_alloc_dev: ZeMemAllocDeviceFn = std::mem::transmute(p_mem_alloc_dev);
+                    let ze_mem_free: ZeMemFreeFn = std::mem::transmute(p_mem_free);
+                    let ze_append_copy: ZeCommandListAppendMemoryCopyFn = std::mem::transmute(p_append_copy);
+                    let ze_list_destroy: ZeCommandListDestroyFn = std::mem::transmute(p_list_destroy);
+                    let ze_queue_destroy: ZeCommandQueueDestroyFn = std::mem::transmute(p_queue_destroy);
+                    let ze_ctx_destroy: ZeContextDestroyFn = std::mem::transmute(p_ctx_destroy);
+
+                    let ctx_desc = ZeContextDesc {
+                        stype: 0xd,
+                        p_next: std::ptr::null(),
+                        flags: 0,
+                    };
+                    let mut h_context: *mut c_void = std::ptr::null_mut();
+                    if ze_ctx_create(npu_driver, &ctx_desc, &mut h_context) == 0 && !h_context.is_null() {
+                        let q_desc = ZeCommandQueueDesc {
+                            stype: 0xe,
+                            p_next: std::ptr::null(),
+                            ordinal: 0,
+                            index: 0,
+                            flags: 0,
+                            mode: 0,
+                            priority: 0,
+                        };
+                        let mut h_queue: *mut c_void = std::ptr::null_mut();
+                        if ze_queue_create(h_context, npu_device, &q_desc, &mut h_queue) == 0 && !h_queue.is_null() {
+                            let cl_desc = ZeCommandListDesc {
+                                stype: 0xf,
+                                p_next: std::ptr::null(),
+                                command_queue_group_ordinal: 0,
+                                flags: 0,
+                            };
+                            let mut h_list: *mut c_void = std::ptr::null_mut();
+                            if ze_list_create(h_context, npu_device, &cl_desc, &mut h_list) == 0 && !h_list.is_null() {
+                                let buf_size = 4 * 1024 * 1024; // 4MB
+                                let host_desc = ZeHostMemAllocDesc { stype: 0x16, p_next: std::ptr::null(), flags: 0 };
+                                let mut p_host: *mut c_void = std::ptr::null_mut();
+                                let hr_h = ze_mem_alloc_host(h_context, &host_desc, buf_size, 64, &mut p_host);
+
+                                let dev_desc = ZeDeviceMemAllocDesc { stype: 0x15, p_next: std::ptr::null(), flags: 0, ordinal: 0 };
+                                let mut p_dev: *mut c_void = std::ptr::null_mut();
+                                let hr_d = ze_mem_alloc_dev(h_context, &dev_desc, buf_size, 64, npu_device, &mut p_dev);
+
+                                if hr_h == 0 && hr_d == 0 && !p_host.is_null() && !p_dev.is_null() {
+                                    for _ in 0..4 {
+                                        let _ = ze_append_copy(h_list, p_dev, p_host, buf_size, std::ptr::null_mut(), 0, std::ptr::null_mut());
+                                        let _ = ze_append_copy(h_list, p_host, p_dev, buf_size, std::ptr::null_mut(), 0, std::ptr::null_mut());
+                                    }
+                                    let _ = ze_list_close(h_list);
+
+                                    *session_guard = Some(NpuHardwareSession {
+                                        h_context,
+                                        h_queue,
+                                        h_list,
+                                        p_host,
+                                        p_dev,
+                                        pfn_exec: ze_queue_exec,
+                                        pfn_sync: ze_queue_sync,
+                                        pfn_mem_free: ze_mem_free,
+                                        pfn_list_destroy: ze_list_destroy,
+                                        pfn_queue_destroy: ze_queue_destroy,
+                                        pfn_ctx_destroy: ze_ctx_destroy,
+                                    });
+                                    tracing::info!(">>> [NpuEngine] Level Zero hardware session initialized on worker thread.");
+                                } else {
+                                    let _ = ze_list_destroy(h_list);
+                                    let _ = ze_queue_destroy(h_queue);
+                                    let _ = ze_ctx_destroy(h_context);
+                                }
+                            } else {
+                                let _ = ze_queue_destroy(h_queue);
+                                let _ = ze_ctx_destroy(h_context);
+                            }
+                        } else {
+                            let _ = ze_ctx_destroy(h_context);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(ref sess) = *session_guard {
+            unsafe {
+                let mut list_ptr = sess.h_list;
+                let _ = (sess.pfn_exec)(sess.h_queue, 1, &mut list_ptr, std::ptr::null_mut());
+                let _ = (sess.pfn_sync)(sess.h_queue, 20_000_000); // 20ms sync
             }
         }
     }

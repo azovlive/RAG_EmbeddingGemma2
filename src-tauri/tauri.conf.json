@@ -9,13 +9,17 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "eg2-rag",
         "width": 1280,
         "height": 840,
         "minWidth": 960,
         "minHeight": 640,
         "decorations": false,
-        "transparent": true
+        "transparent": false,
+        "shadow": true,
+        "center": true,
+        "visible": true
       }
     ],
     "security": {
