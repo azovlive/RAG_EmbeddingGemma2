@@ -81,6 +81,14 @@ pub async fn resume_indexing(
 }
 
 #[tauri::command]
+pub async fn cancel_indexing(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.indexer.cancel();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_indexing_state(
     state: State<'_, Arc<AppState>>,
 ) -> Result<IndexingState, String> {

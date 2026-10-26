@@ -70,6 +70,12 @@ impl VectorDatabase {
     }
 
     pub async fn upsert_chunks(&self, new_chunks: Vec<DbChunk>) -> Result<()> {
+        self.upsert_chunks_memory(new_chunks).await;
+        self.persist().await?;
+        Ok(())
+    }
+
+    pub async fn upsert_chunks_memory(&self, new_chunks: Vec<DbChunk>) {
         let mut lock = self.chunks.write().await;
         for new_c in new_chunks {
             if let Some(pos) = lock.iter().position(|c| c.id == new_c.id) {
@@ -78,9 +84,6 @@ impl VectorDatabase {
                 lock.push(new_c);
             }
         }
-        drop(lock);
-        self.persist().await?;
-        Ok(())
     }
 
     pub async fn delete_by_file_path(&self, normalized_path: &str) -> Result<()> {

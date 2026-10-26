@@ -10,3 +10,4 @@ pub mod resource_governor;
 pub mod indexer;
 pub mod daemon_ipc;
 pub mod tray_service;
+pub mod npu_backend;

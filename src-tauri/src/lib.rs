@@ -108,6 +108,7 @@ pub fn run() {
             crate::commands::index_cmd::trigger_indexing,
             crate::commands::index_cmd::pause_indexing,
             crate::commands::index_cmd::resume_indexing,
+            crate::commands::index_cmd::cancel_indexing,
             crate::commands::index_cmd::get_indexing_state,
             crate::commands::index_cmd::get_index_count,
         ])

@@ -11,11 +11,13 @@ import {
   ShieldCheck,
   Play,
   Pause,
+  Square,
   ChevronDown,
   Folder,
   FolderPlus,
   Zap,
-  CheckCircle2
+  CheckCircle2,
+  Cpu
 } from "lucide-react";
 
 interface StatusBarProps {
@@ -35,6 +37,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
   const [statusNote, setStatusNote] = useState<string | null>(null);
   const [targetFolders, setTargetFolders] = useState<TargetFolder[]>([]);
   const [isReindexMenuOpen, setIsReindexMenuOpen] = useState<boolean>(false);
+  const [preferNpu, setPreferNpu] = useState<boolean>(true);
 
   const fetchStatus = () => {
     api.getSystemStatus()
@@ -53,6 +56,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
   useEffect(() => {
     fetchStatus();
     loadFolders();
+
+    api.getNpuPreference()
+      .then(setPreferNpu)
+      .catch(() => {});
 
     api.getIndexingState()
       .then((state) => {
@@ -96,7 +103,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
         if (count === 0) {
           setStatusNote("색인 대상 없음 (0개 파일)");
         } else {
-          setStatusNote(`색인 완료 (${count}개 파일)`);
+          setStatusNote(`색인 완료 (${count}개 파일 처리됨)`);
         }
         setTimeout(() => setStatusNote(null), 4000);
       }).then((un) => (unlistenComp = un));
@@ -125,11 +132,19 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
       // Start Indexing
       setIsIndexing(true);
       setIsPaused(false);
+      setProgress({
+        current_file: "색인 파일 탐색 중...",
+        processed_files: 0,
+        total_files: 0,
+        percent: 0,
+        is_paused: false,
+      });
       try {
         await api.triggerIndexing();
       } catch (e: any) {
         console.error(e);
         setIsIndexing(false);
+        setProgress(null);
         setStatusNote(String(e));
       }
     } else if (isPaused) {
@@ -151,17 +166,41 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     }
   };
 
+  // Cancel Indexing (Stop immediately)
+  const handleCancel = async () => {
+    try {
+      await api.cancelIndexing();
+      setIsIndexing(false);
+      setIsPaused(false);
+      setProgress(null);
+      setStatusNote("색인 작업이 취소되었습니다.");
+      setTimeout(() => setStatusNote(null), 4000);
+      fetchStatus();
+    } catch (e: any) {
+      console.error("Cancel failed:", e);
+    }
+  };
+
   // Force Re-index All Folders (with NPU verification)
   const handleReindexAll = async () => {
     setIsReindexMenuOpen(false);
-    setStatusNote("전체 다시 색인 시작 (NPU/기존 해시 초기화)...");
+    setStatusNote(null);
     setIsIndexing(true);
     setIsPaused(false);
+    setProgress({
+      current_file: "전체 다시 색인 초기화 중...",
+      processed_files: 0,
+      total_files: 0,
+      percent: 0,
+      is_paused: false,
+    });
+
     try {
       await api.triggerIndexing(undefined, true);
     } catch (e: any) {
       console.error(e);
       setIsIndexing(false);
+      setProgress(null);
       setStatusNote(`다시 색인 실패: ${e}`);
     }
   };
@@ -169,14 +208,23 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
   // Force Re-index Specific Folder
   const handleReindexFolder = async (folderPath: string) => {
     setIsReindexMenuOpen(false);
-    setStatusNote(`[${folderPath}] 다시 색인 시작...`);
+    setStatusNote(null);
     setIsIndexing(true);
     setIsPaused(false);
+    setProgress({
+      current_file: `[${folderPath}] 대상 탐색 중...`,
+      processed_files: 0,
+      total_files: 0,
+      percent: 0,
+      is_paused: false,
+    });
+
     try {
       await api.triggerIndexing(folderPath, true);
     } catch (e: any) {
       console.error(e);
       setIsIndexing(false);
+      setProgress(null);
       setStatusNote(`다시 색인 실패: ${e}`);
     }
   };
@@ -228,7 +276,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
             title="일시 정지된 색인 재개"
           >
             <Play className="w-3 h-3 fill-current text-amber-400" />
-            <span>색인멈춤 (재개)</span>
+            <span>색인 재개</span>
           </button>
         ) : (
           <button
@@ -237,11 +285,23 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
             title="색인 일시 정지"
           >
             <Pause className="w-3 h-3 fill-current text-sky-400" />
-            <span>색인중 (일시정지)</span>
+            <span>일시 정지</span>
           </button>
         )}
 
-        {/* 2. Re-index Button with Dropdown (다시 색인하기) */}
+        {/* 2. Cancel Indexing Button (Visible whenever indexing is active) */}
+        {isIndexing && (
+          <button
+            onClick={handleCancel}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-medium transition-all active:scale-95 text-xs"
+            title="진행 중인 색인 작업을 즉시 중단 및 취소"
+          >
+            <Square className="w-3 h-3 fill-current text-rose-400" />
+            <span>색인 취소</span>
+          </button>
+        )}
+
+        {/* 3. Re-index Button with Dropdown (다시 색인하기) */}
         <div className="relative">
           <button
             onClick={() => {
@@ -256,7 +316,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
                 ? "bg-slate-700 text-slate-100 border-sky-400/40"
                 : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10 hover:text-white active:scale-95"
             }`}
-            title="기존 캐시를 무시하고 NPU/디바이스로 다시 색인"
+            title="기존 캐시를 무시하고 Intel AI Boost NPU로 다시 색인"
           >
             <RefreshCw className="w-3 h-3 text-sky-400" />
             <span>다시 색인</span>
@@ -269,10 +329,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
               <div className="px-2 py-1.5 border-b border-white/5 mb-1.5">
                 <div className="font-semibold text-slate-200 flex items-center gap-1.5 text-[11px]">
                   <Zap className="w-3.5 h-3.5 text-sky-400" />
-                  <span>다시 색인 (NPU 가속 검증)</span>
+                  <span>다시 색인 (Intel AI Boost NPU 가속)</span>
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
-                  기존 해시를 무시하고 활성 가속기(NPU)로 텍스트 임베딩을 처음부터 다시 생성합니다.
+                  기존 해시를 무시하고 NPU 하드웨어 가속기로 텍스트 임베딩을 처음부터 다시 생성합니다.
                 </div>
               </div>
 
@@ -286,7 +346,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
                   <span>전체 다시 색인 (모든 폴더)</span>
                 </div>
                 <span className="text-[10px] text-slate-400 group-hover:text-slate-300 pl-4.5">
-                  등록된 모든 대상 폴더의 색인 초기화 후 전량 재생성
+                  등록된 모든 대상 폴더의 색인 초기화 후 NPU 재생성
                 </span>
               </button>
 
@@ -331,15 +391,15 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
           )}
         </div>
 
-        {/* 3. Progress Display or Status Note */}
-        {isIndexing && progress && (
-          <div className="flex items-center gap-2 bg-slate-950/60 px-2.5 py-0.5 rounded border border-white/10">
+        {/* 4. Real-time Progress Display (Always visible during indexing) */}
+        {isIndexing && (
+          <div className="flex items-center gap-2 bg-slate-950/70 px-2.5 py-0.5 rounded border border-white/10 text-xs">
             <span
               className={`font-mono font-bold text-xs ${
                 isPaused ? "text-amber-400" : "text-sky-400"
               }`}
             >
-              {(progress.percent ?? 0).toFixed(0)}%
+              {(progress?.percent ?? 0).toFixed(0)}%
             </span>
 
             {/* Mini Progress Bar */}
@@ -348,14 +408,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
                 className={`h-full transition-all duration-300 ${
                   isPaused ? "bg-amber-400" : "bg-sky-400"
                 }`}
-                style={{ width: `${Math.min(100, Math.max(0, progress.percent ?? 0))}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, progress?.percent ?? 0))}%` }}
               />
             </div>
 
             {/* File Count */}
             <span className="font-mono text-slate-300 text-[11px] whitespace-nowrap">
-              <strong className="text-white font-semibold">{progress.processed_files ?? 0}</strong>
-              /{progress.total_files ?? 0} 파일
+              <strong className="text-white font-semibold">{progress?.processed_files ?? 0}</strong>
+              /{progress?.total_files ?? 0} 파일
             </span>
 
             {/* Status Pill */}
@@ -369,19 +429,25 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
               {isPaused ? "일시정지됨" : "색인 중"}
             </span>
 
-            {/* Truncated File Name */}
-            {progress.current_file && (
-              <span
-                className="text-[10px] text-slate-400 font-mono truncate max-w-[130px] hidden sm:inline"
-                title={progress.current_file}
-              >
-                ({progress.current_file})
+            {/* NPU Badge during indexing */}
+            {preferNpu && (
+              <span className="text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono font-bold flex items-center gap-0.5">
+                <Cpu className="w-2.5 h-2.5 text-sky-400" />
+                NPU
               </span>
             )}
+
+            {/* Truncated File Name */}
+            <span
+              className="text-[10px] text-slate-400 font-mono truncate max-w-[140px] hidden sm:inline"
+              title={progress?.current_file || "색인 처리 중..."}
+            >
+              ({progress?.current_file || "색인 처리 중..."})
+            </span>
           </div>
         )}
 
-        {/* Status Notification Note (e.g. 0 files or completion) */}
+        {/* Status Notification Note (e.g. Cancelled, 0 files or completion) */}
         {!isIndexing && statusNote && (
           <div className="flex items-center gap-1.5 text-sky-300 bg-sky-950/60 border border-sky-500/30 px-2 py-0.5 rounded text-[11px] animate-in fade-in duration-200">
             <CheckCircle2 className="w-3 h-3 text-sky-400" />

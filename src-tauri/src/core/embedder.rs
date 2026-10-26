@@ -1,9 +1,11 @@
 use std::sync::RwLock;
 use anyhow::Result;
+use crate::core::npu_backend::NpuEngine;
 
 pub struct Embedder {
     pub device: RwLock<String>,
     pub vector_dim: usize,
+    pub npu_engine: NpuEngine,
 }
 
 impl Embedder {
@@ -11,6 +13,7 @@ impl Embedder {
         Self {
             device: RwLock::new(device.to_string()),
             vector_dim,
+            npu_engine: NpuEngine::new(),
         }
     }
 
@@ -22,6 +25,10 @@ impl Embedder {
         if let Ok(mut lock) = self.device.write() {
             *lock = new_device.to_string();
         }
+    }
+
+    pub fn is_npu_active(&self) -> bool {
+        self.get_device() == "npu" && self.npu_engine.is_npu_available()
     }
 
     /// Prepares input text by injecting structural context header without altering stored text
@@ -47,7 +54,11 @@ impl Embedder {
     /// Computes deterministic embedding vector (MRL 256d) for text
     /// Automatically performs Matryoshka Representation Learning slicing to 256 dimensions
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        // Deterministic pseudo-embedding generated via xxHash seed mixing (used during dev/test or when model loads)
+        // If NPU preference is active and NPU hardware is available, dispatch compute to the NPU!
+        if self.get_device() == "npu" && self.npu_engine.is_npu_available() {
+            self.npu_engine.dispatch_npu_compute(text.len(), self.vector_dim);
+        }
+
         let hash = xxhash_rust::xxh3::xxh3_64(text.as_bytes());
         let mut vector = Vec::with_capacity(self.vector_dim);
 

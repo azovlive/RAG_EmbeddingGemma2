@@ -31,6 +31,7 @@ pub struct Indexer {
     pub governor: Arc<ResourceGovernor>,
     pub is_paused: Arc<AtomicBool>,
     pub is_running: Arc<AtomicBool>,
+    pub is_cancelled: Arc<AtomicBool>,
 }
 
 impl Indexer {
@@ -47,6 +48,7 @@ impl Indexer {
             governor,
             is_paused: Arc::new(AtomicBool::new(false)),
             is_running: Arc::new(AtomicBool::new(false)),
+            is_cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -55,6 +57,11 @@ impl Indexer {
     }
 
     pub fn resume(&self) {
+        self.is_paused.store(false, Ordering::SeqCst);
+    }
+
+    pub fn cancel(&self) {
+        self.is_cancelled.store(true, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
     }
 
@@ -74,6 +81,7 @@ impl Indexer {
     ) -> Result<usize> {
         self.is_running.store(true, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
+        self.is_cancelled.store(false, Ordering::SeqCst);
 
         // If force re-index, clear corresponding DB chunks first
         if force {
@@ -134,17 +142,19 @@ impl Indexer {
 
         let total = all_files.len();
 
-        // If 0 files found, notify immediately and finish cleanly
+        // Send initial progress immediately so UI updates with 0% right away
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(IndexProgress {
+                current_file: if total > 0 { "색인 시작 중...".to_string() } else { "색인 대상 파일 없음 (0개)".to_string() },
+                processed_files: 0,
+                total_files: total,
+                percent: 0.0,
+                is_paused: false,
+            }).await;
+        }
+
+        // If 0 files found, finish cleanly
         if total == 0 {
-            if let Some(ref tx) = progress_tx {
-                let _ = tx.send(IndexProgress {
-                    current_file: "색인 대상 파일 없음 (0개)".to_string(),
-                    processed_files: 0,
-                    total_files: 0,
-                    percent: 100.0,
-                    is_paused: false,
-                }).await;
-            }
             self.is_running.store(false, Ordering::SeqCst);
             self.is_paused.store(false, Ordering::SeqCst);
             return Ok(0);
@@ -152,8 +162,25 @@ impl Indexer {
 
         // 2. Process files with Read-Only guarantee & Resource Governor
         for (idx, file_path) in all_files.into_iter().enumerate() {
+            // Check User Cancel
+            if self.is_cancelled.load(Ordering::SeqCst) {
+                tracing::info!("Indexing cancelled by user at file {}/{}", idx, total);
+                self.is_running.store(false, Ordering::SeqCst);
+                self.is_paused.store(false, Ordering::SeqCst);
+                self.is_cancelled.store(false, Ordering::SeqCst);
+                let _ = self.db.persist().await;
+                return Ok(idx);
+            }
+
             // Check User Manual Pause
             while self.is_paused.load(Ordering::SeqCst) {
+                if self.is_cancelled.load(Ordering::SeqCst) {
+                    self.is_running.store(false, Ordering::SeqCst);
+                    self.is_paused.store(false, Ordering::SeqCst);
+                    self.is_cancelled.store(false, Ordering::SeqCst);
+                    let _ = self.db.persist().await;
+                    return Ok(idx);
+                }
                 if let Some(ref tx) = progress_tx {
                     let _ = tx.send(IndexProgress {
                         current_file: file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
@@ -183,6 +210,11 @@ impl Indexer {
 
             let _ = self.index_single_file(&file_path, force).await;
 
+            // Batch persist every 20 files to prevent disk write bottlenecks
+            if (idx + 1) % 20 == 0 {
+                let _ = self.db.persist().await;
+            }
+
             if let Some(ref tx) = progress_tx {
                 let _ = tx.send(IndexProgress {
                     current_file: file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
@@ -193,6 +225,9 @@ impl Indexer {
                 }).await;
             }
         }
+
+        // Final persist of all accumulated chunks
+        let _ = self.db.persist().await;
 
         self.is_running.store(false, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
@@ -283,7 +318,7 @@ impl Indexer {
             });
         }
 
-        self.db.upsert_chunks(db_chunks).await?;
+        self.db.upsert_chunks_memory(db_chunks).await;
         Ok(())
     }
 }
