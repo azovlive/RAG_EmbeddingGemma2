@@ -103,6 +103,8 @@ pub fn run() {
             crate::commands::system_cmd::reveal_in_explorer,
             crate::commands::system_cmd::open_in_editor,
             crate::commands::system_cmd::exit_app,
+            crate::commands::system_cmd::get_npu_preference,
+            crate::commands::system_cmd::set_npu_preference,
             crate::commands::index_cmd::trigger_indexing,
             crate::commands::index_cmd::pause_indexing,
             crate::commands::index_cmd::resume_indexing,

@@ -1,15 +1,26 @@
+use std::sync::RwLock;
 use anyhow::Result;
 
 pub struct Embedder {
-    pub device: String,
+    pub device: RwLock<String>,
     pub vector_dim: usize,
 }
 
 impl Embedder {
     pub fn new(device: &str, vector_dim: usize) -> Self {
         Self {
-            device: device.to_string(),
+            device: RwLock::new(device.to_string()),
             vector_dim,
+        }
+    }
+
+    pub fn get_device(&self) -> String {
+        self.device.read().unwrap().clone()
+    }
+
+    pub fn set_device(&self, new_device: &str) {
+        if let Ok(mut lock) = self.device.write() {
+            *lock = new_device.to_string();
         }
     }
 

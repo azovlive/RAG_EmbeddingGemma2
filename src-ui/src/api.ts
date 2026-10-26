@@ -48,6 +48,12 @@ export const api = {
   openInEditor: (filePath: string, line?: number): Promise<void> =>
     invoke("open_in_editor", { filePath, line }),
 
+  getNpuPreference: (): Promise<boolean> =>
+    invoke("get_npu_preference"),
+
+  setNpuPreference: (preferNpu: boolean): Promise<boolean> =>
+    invoke("set_npu_preference", { preferNpu }),
+
   // Index
   triggerIndexing: (): Promise<void> =>
     invoke("trigger_indexing"),

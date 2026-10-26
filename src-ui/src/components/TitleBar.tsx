@@ -9,7 +9,8 @@ import {
   Layers,
   Play,
   Pause,
-  CheckCircle2
+  CheckCircle2,
+  Cpu
 } from "lucide-react";
 import { api } from "../api";
 import { IndexProgress } from "../types";
@@ -24,11 +25,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
   const [totalChunks, setTotalChunks] = useState<number>(0);
+  const [preferNpu, setPreferNpu] = useState<boolean>(true);
 
   useEffect(() => {
     try {
       setAppWindow(getCurrentWindow());
     } catch {}
+
+    api.getNpuPreference()
+      .then(setPreferNpu)
+      .catch(() => {});
 
     const refreshState = () => {
       api.getIndexingState()
@@ -92,6 +98,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
     try {
       await api.resumeIndexing();
       setIsPaused(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleNpu = async () => {
+    const nextState = !preferNpu;
+    try {
+      await api.setNpuPreference(nextState);
+      setPreferNpu(nextState);
     } catch (e) {
       console.error(e);
     }
@@ -226,8 +242,33 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
         )}
       </div>
 
-      {/* Right: Window Controls & Settings */}
-      <div className="flex items-center gap-1 -mr-1 shrink-0">
+      {/* Right: Window Controls, NPU Toggle & Settings */}
+      <div className="flex items-center gap-1.5 -mr-1 shrink-0">
+        {/* NPU Prefer Toggle Button */}
+        <button
+          onClick={handleToggleNpu}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+            preferNpu
+              ? "bg-sky-500/15 text-sky-300 border-sky-400/40 shadow-sm"
+              : "bg-slate-800 text-slate-400 border-white/5 hover:bg-slate-700 hover:text-slate-200"
+          }`}
+          title={
+            preferNpu
+              ? "Intel AI Boost NPU 초저전력 가속 활성화됨 (< 3W 전력, 일상 작업/CPU 간섭 0%)"
+              : "NPU 가속 비활성화됨 (클릭하여 NPU 우선 사용 활성화)"
+          }
+        >
+          <Cpu className={`w-3.5 h-3.5 ${preferNpu ? "text-sky-400" : "text-slate-500"}`} />
+          <span className="font-semibold text-[11px]">NPU 우선</span>
+          <span
+            className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${
+              preferNpu ? "bg-sky-400 text-slate-950" : "bg-slate-700 text-slate-400"
+            }`}
+          >
+            {preferNpu ? "ON" : "OFF"}
+          </span>
+        </button>
+
         <button
           onClick={onOpenSettings}
           className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"

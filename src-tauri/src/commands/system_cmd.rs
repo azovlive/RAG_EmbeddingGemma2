@@ -76,3 +76,25 @@ pub async fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_npu_preference(
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    Ok(state.embedder.get_device() == "npu")
+}
+
+#[tauri::command]
+pub async fn set_npu_preference(
+    state: State<'_, Arc<AppState>>,
+    prefer_npu: bool,
+) -> Result<bool, String> {
+    let device = if prefer_npu { "npu" } else { "cpu" };
+    state.embedder.set_device(device);
+
+    let mut conf = state.config.write().await;
+    conf.inference.device = device.to_string();
+    let _ = conf.save();
+
+    Ok(prefer_npu)
+}
