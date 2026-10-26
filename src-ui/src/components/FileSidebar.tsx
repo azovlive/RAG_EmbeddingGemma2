@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
-import { SearchResult, isImageFile } from "../types";
-import { FileCode, Cpu, BookOpen, Layers, Image as ImageIcon } from "lucide-react";
+import { SearchResult, getFileCategory } from "../types";
+import { FileCode, Cpu, BookOpen, Layers, Image as ImageIcon, Film } from "lucide-react";
 
 interface FileSidebarProps {
   results: SearchResult[];
@@ -49,8 +49,15 @@ export const FileSidebar: React.FC<FileSidebarProps> = ({
   }, [results]);
 
   const getExtIcon = (ext: string) => {
-    if (isImageFile(ext)) {
+    const category = getFileCategory(ext);
+    if (category === "image") {
       return <ImageIcon className="w-4 h-4 text-emerald-400" />;
+    }
+    if (category === "video") {
+      return <Film className="w-4 h-4 text-purple-400" />;
+    }
+    if (category === "document") {
+      return <BookOpen className="w-4 h-4 text-amber-400" />;
     }
     switch (ext.toLowerCase()) {
       case "py":

@@ -96,8 +96,33 @@ export interface ImageDataResponse {
   ext: string;
 }
 
+export type FileCategory = "image" | "video" | "document" | "code";
+
 export const isImageFile = (ext?: string): boolean => {
   if (!ext) return false;
   const clean = ext.toLowerCase().replace(/^\./, "");
   return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff", "tif", "avif"].includes(clean);
+};
+
+export const isVideoFile = (ext?: string): boolean => {
+  if (!ext) return false;
+  const clean = ext.toLowerCase().replace(/^\./, "");
+  return ["mp4", "webm", "mkv", "avi", "mov", "wmv", "flv", "m4v"].includes(clean);
+};
+
+export const isDocumentFile = (ext?: string): boolean => {
+  if (!ext) return false;
+  const clean = ext.toLowerCase().replace(/^\./, "");
+  return [
+    "pdf", "md", "markdown", "txt", "csv", "log", "rtf",
+    "doc", "docx", "ppt", "pptx", "xls", "xlsx", "hwp", "hwpx",
+    "json", "yaml", "yml", "toml", "xml"
+  ].includes(clean);
+};
+
+export const getFileCategory = (ext?: string): FileCategory => {
+  if (isImageFile(ext)) return "image";
+  if (isVideoFile(ext)) return "video";
+  if (isDocumentFile(ext)) return "document";
+  return "code";
 };

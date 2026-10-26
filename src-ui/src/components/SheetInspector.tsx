@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { SearchResult, SimilarFileResult, DbChunk, isImageFile } from "../types";
+import { SearchResult, SimilarFileResult, DbChunk, getFileCategory } from "../types";
 import { api } from "../api";
 import { ImagePreview } from "./ImagePreview";
+import { VideoPreview } from "./VideoPreview";
+import { DocumentPreview } from "./DocumentPreview";
 import {
   X,
   ExternalLink,
@@ -11,6 +13,7 @@ import {
   Sparkles,
   FileCode,
   Image as ImageIcon,
+  Film,
   BookOpen,
   Layers
 } from "lucide-react";
@@ -55,7 +58,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
 
   const { chunk, score } = selectedResult;
   const scorePct = Math.round(score * 100);
-  const isImage = isImageFile(chunk.ext);
+  const category = getFileCategory(chunk.ext);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(chunk.content);
@@ -70,7 +73,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
   };
 
   const handleOpenEditor = () => {
-    if (isImage) {
+    if (category === "image" || category === "video" || category === "document") {
       api.openFileDefault(chunk.file_path);
     } else {
       api.openInEditor(chunk.file_path, chunk.start_line);
@@ -96,11 +99,23 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900/95 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className={`p-1.5 rounded-lg border ${
-              isImage
+              category === "image"
                 ? "bg-emerald-500/10 border-emerald-400/20 text-emerald-400"
+                : category === "video"
+                ? "bg-purple-500/10 border-purple-400/20 text-purple-400"
+                : category === "document"
+                ? "bg-amber-500/10 border-amber-400/20 text-amber-400"
                 : "bg-sky-500/10 border-sky-400/20 text-sky-400"
             }`}>
-              {isImage ? <ImageIcon className="w-4 h-4" /> : <FileCode className="w-4 h-4" />}
+              {category === "image" ? (
+                <ImageIcon className="w-4 h-4" />
+              ) : category === "video" ? (
+                <Film className="w-4 h-4" />
+              ) : category === "document" ? (
+                <BookOpen className="w-4 h-4" />
+              ) : (
+                <FileCode className="w-4 h-4" />
+              )}
             </div>
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-100 truncate" title={chunk.file_name}>
@@ -127,10 +142,22 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
         <div className="flex items-center justify-between px-4 py-2 bg-slate-950/60 border-b border-white/5 text-xs shrink-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/40">
-              {isImage ? `이미지 (${chunk.ext.toUpperCase()})` : chunk.symbol ? chunk.symbol : `L${chunk.start_line} - L${chunk.end_line}`}
+              {category === "image"
+                ? `이미지 (${chunk.ext.toUpperCase()})`
+                : category === "video"
+                ? `동영상 (${chunk.ext.toUpperCase()})`
+                : category === "document"
+                ? `${chunk.ext.toLowerCase() === "pdf" ? `PDF Page ${chunk.start_line}` : `문서 (${chunk.ext.toUpperCase()})`}`
+                : chunk.symbol ? chunk.symbol : `L${chunk.start_line} - L${chunk.end_line}`}
             </span>
             <span className="text-[11px] text-slate-400">
-              {isImage ? "단일 이미지 에셋" : `라인 ${chunk.start_line} ~ ${chunk.end_line}`}
+              {category === "image"
+                ? "단일 이미지 에셋"
+                : category === "video"
+                ? "비디오 미디어 스트림"
+                : category === "document"
+                ? "문서 텍스트 본문"
+                : `라인 ${chunk.start_line} ~ ${chunk.end_line}`}
             </span>
           </div>
 
@@ -148,7 +175,15 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
             className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium transition-colors shadow-sm"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>{isImage ? "사진 앱에서 열기" : "에디터에서 열기"}</span>
+            <span>
+              {category === "image"
+                ? "사진 앱에서 열기"
+                : category === "video"
+                ? "미디어 플레이어에서 재생"
+                : category === "document"
+                ? (chunk.ext.toLowerCase() === "pdf" ? "PDF 뷰어로 열기" : "기본 앱으로 열기")
+                : "에디터에서 열기"}
+            </span>
           </button>
 
           <button
@@ -178,8 +213,24 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            {isImage ? <ImageIcon className="w-3.5 h-3.5 text-emerald-400" /> : <FileCode className="w-3.5 h-3.5 text-sky-400" />}
-            <span>{isImage ? "이미지 뷰어" : "코드 내용"}</span>
+            {category === "image" ? (
+              <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+            ) : category === "video" ? (
+              <Film className="w-3.5 h-3.5 text-purple-400" />
+            ) : category === "document" ? (
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+            ) : (
+              <FileCode className="w-3.5 h-3.5 text-sky-400" />
+            )}
+            <span>
+              {category === "image"
+                ? "이미지 뷰어"
+                : category === "video"
+                ? "비디오 플레이어"
+                : category === "document"
+                ? "문서 내용"
+                : "코드 내용"}
+            </span>
           </button>
           <button
             onClick={() => setActiveTab("similar")}
@@ -208,12 +259,31 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {activeTab === "code" && (
-            isImage ? (
+            category === "image" ? (
               <ImagePreview
                 mode="full"
                 filePath={chunk.file_path}
                 fileName={chunk.file_name}
                 ext={chunk.ext}
+                onOpenDefault={() => api.openFileDefault(chunk.file_path)}
+              />
+            ) : category === "video" ? (
+              <VideoPreview
+                mode="full"
+                filePath={chunk.file_path}
+                fileName={chunk.file_name}
+                ext={chunk.ext}
+                onOpenDefault={() => api.openFileDefault(chunk.file_path)}
+              />
+            ) : category === "document" ? (
+              <DocumentPreview
+                mode="full"
+                filePath={chunk.file_path}
+                fileName={chunk.file_name}
+                ext={chunk.ext}
+                content={chunk.content}
+                startLine={chunk.start_line}
+                endLine={chunk.end_line}
                 onOpenDefault={() => api.openFileDefault(chunk.file_path)}
               />
             ) : (
@@ -246,7 +316,7 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
               ) : (
                 similarFiles.map((sim, i) => {
                   const simPct = Math.round(sim.score * 100);
-                  const isSimImage = isImageFile(sim.ext);
+                  const simCat = getFileCategory(sim.ext);
                   return (
                     <div
                       key={i}
@@ -254,10 +324,14 @@ export const SheetInspector: React.FC<SheetInspectorProps> = ({
                       className="p-3 rounded-lg glass-card hover:bg-slate-800/80 cursor-pointer transition-colors flex items-center justify-between"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        {isSimImage ? (
+                        {simCat === "image" ? (
                           <ImageIcon className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : simCat === "video" ? (
+                          <Film className="w-4 h-4 text-purple-400 shrink-0" />
+                        ) : simCat === "document" ? (
+                          <BookOpen className="w-4 h-4 text-amber-400 shrink-0" />
                         ) : (
-                          <BookOpen className="w-4 h-4 text-sky-400 shrink-0" />
+                          <FileCode className="w-4 h-4 text-sky-400 shrink-0" />
                         )}
                         <div className="min-w-0">
                           <div className="text-xs font-medium text-slate-200 truncate">

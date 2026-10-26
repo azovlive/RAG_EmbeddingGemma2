@@ -275,6 +275,14 @@ impl Indexer {
             ext.as_str(),
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico" | "tiff" | "tif" | "avif"
         );
+        let is_video = matches!(
+            ext.as_str(),
+            "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v"
+        );
+        let is_office_doc = matches!(
+            ext.as_str(),
+            "doc" | "docx" | "ppt" | "pptx" | "xls" | "xlsx" | "hwp" | "hwpx"
+        );
 
         // Parse chunks according to file extension
         let chunks = if is_image {
@@ -307,6 +315,58 @@ impl Indexer {
                 content: content_desc,
                 lang: "image".to_string(),
             }]
+        } else if is_video {
+            let file_len = content_bytes.len();
+            let formatted_size = if file_len < 1024 {
+                format!("{} B", file_len)
+            } else if file_len < 1024 * 1024 {
+                format!("{:.1} KB", file_len as f64 / 1024.0)
+            } else {
+                format!("{:.1} MB", file_len as f64 / (1024.0 * 1024.0))
+            };
+
+            let content_desc = format!(
+                "[동영상 미디어 파일: {file_name}]\n형식: {} 비디오 미디어\n크기: {formatted_size}\n경로: {display_path}",
+                ext.to_uppercase()
+            );
+
+            vec![super::code_chunker::CodeChunk {
+                start_line: 1,
+                end_line: 1,
+                symbol: format!("[동영상] {file_name}"),
+                content: content_desc,
+                lang: "video".to_string(),
+            }]
+        } else if is_office_doc {
+            let file_len = content_bytes.len();
+            let formatted_size = if file_len < 1024 {
+                format!("{} B", file_len)
+            } else if file_len < 1024 * 1024 {
+                format!("{:.1} KB", file_len as f64 / 1024.0)
+            } else {
+                format!("{:.1} MB", file_len as f64 / (1024.0 * 1024.0))
+            };
+
+            let doc_type = match ext.as_str() {
+                "doc" | "docx" => "Word 문서",
+                "ppt" | "pptx" => "PowerPoint 발표 문서",
+                "xls" | "xlsx" => "Excel 스프레드시트",
+                "hwp" | "hwpx" => "한글(HWP) 문서",
+                _ => "오피스 문서",
+            };
+
+            let content_desc = format!(
+                "[{doc_type}: {file_name}]\n형식: {}\n크기: {formatted_size}\n경로: {display_path}",
+                ext.to_uppercase()
+            );
+
+            vec![super::code_chunker::CodeChunk {
+                start_line: 1,
+                end_line: 1,
+                symbol: format!("[문서] {file_name}"),
+                content: content_desc,
+                lang: "document".to_string(),
+            }]
         } else if ext == "pdf" {
             PdfParser::parse_pdf(path)?
         } else {
@@ -315,7 +375,7 @@ impl Indexer {
                 "py" | "ipynb" | "cpp" | "hpp" | "c" | "h" | "cc" | "rs" => {
                     CodeChunker::chunk_file(path, &content_str)?
                 }
-                "md" | "markdown" | "txt" => {
+                "md" | "markdown" | "txt" | "csv" | "log" | "rtf" | "json" | "toml" | "yaml" | "yml" | "xml" => {
                     TextExtractor::extract_chunks(&content_str, &ext)?
                 }
                 _ => {

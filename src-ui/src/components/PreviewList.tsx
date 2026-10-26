@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { SearchResult, isImageFile } from "../types";
+import { SearchResult, getFileCategory } from "../types";
 import { api } from "../api";
 import { ImagePreview } from "./ImagePreview";
+import { VideoPreview } from "./VideoPreview";
+import { DocumentPreview } from "./DocumentPreview";
 import {
   ExternalLink,
   FolderOpen,
@@ -107,7 +109,7 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                 ? "text-sky-400 bg-sky-500/10 border-sky-500/20"
                 : "text-slate-400 bg-slate-500/10 border-slate-500/20";
 
-            const isImage = isImageFile(chunk.ext);
+            const category = getFileCategory(chunk.ext);
 
             // Slice content to user-selected previewLines
             const allLines = chunk.content.split("\n");
@@ -142,7 +144,13 @@ export const PreviewList: React.FC<PreviewListProps> = ({
 
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[11px] font-mono text-slate-400">
-                      {isImage ? `이미지 (${chunk.ext.toUpperCase()})` : `L${chunk.start_line} - L${chunk.end_line}`}
+                      {category === "image"
+                        ? `이미지 (${chunk.ext.toUpperCase()})`
+                        : category === "video"
+                        ? `동영상 (${chunk.ext.toUpperCase()})`
+                        : category === "document"
+                        ? `${chunk.ext.toLowerCase() === "pdf" ? `PDF Page ${chunk.start_line}` : `문서 (${chunk.ext.toUpperCase()})`}`
+                        : `L${chunk.start_line} - L${chunk.end_line}`}
                     </span>
                     <span
                       className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${scoreColor}`}
@@ -170,13 +178,34 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                   </button>
                 </div>
 
-                {/* Content Preview: Image or Code */}
-                {isImage ? (
+                {/* Content Preview: Image, Video, Document, or Code */}
+                {category === "image" ? (
                   <ImagePreview
                     mode="thumbnail"
                     filePath={chunk.file_path}
                     fileName={chunk.file_name}
                     ext={chunk.ext}
+                    onOpenInspector={() => onSelectResult(res)}
+                    onOpenDefault={() => api.openFileDefault(chunk.file_path)}
+                  />
+                ) : category === "video" ? (
+                  <VideoPreview
+                    mode="thumbnail"
+                    filePath={chunk.file_path}
+                    fileName={chunk.file_name}
+                    ext={chunk.ext}
+                    onOpenInspector={() => onSelectResult(res)}
+                    onOpenDefault={() => api.openFileDefault(chunk.file_path)}
+                  />
+                ) : category === "document" ? (
+                  <DocumentPreview
+                    mode="thumbnail"
+                    filePath={chunk.file_path}
+                    fileName={chunk.file_name}
+                    ext={chunk.ext}
+                    content={chunk.content}
+                    startLine={chunk.start_line}
+                    endLine={chunk.end_line}
                     onOpenInspector={() => onSelectResult(res)}
                     onOpenDefault={() => api.openFileDefault(chunk.file_path)}
                   />
@@ -214,7 +243,7 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                 {/* Action Bar */}
                 <div className="flex items-center justify-between pt-1 text-xs">
                   <div className="flex items-center gap-1.5">
-                    {isImage ? (
+                    {category === "image" ? (
                       <button
                         onClick={() => api.openFileDefault(chunk.file_path)}
                         className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
@@ -222,6 +251,24 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                       >
                         <ExternalLink className="w-3 h-3 text-sky-400" />
                         <span>사진 앱 열기</span>
+                      </button>
+                    ) : category === "video" ? (
+                      <button
+                        onClick={() => api.openFileDefault(chunk.file_path)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
+                        title="윈도우 미디어 플레이어로 재생"
+                      >
+                        <ExternalLink className="w-3 h-3 text-purple-400" />
+                        <span>미디어 재생</span>
+                      </button>
+                    ) : category === "document" ? (
+                      <button
+                        onClick={() => api.openFileDefault(chunk.file_path)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
+                        title="기본 문서 리더/앱으로 열기"
+                      >
+                        <ExternalLink className="w-3 h-3 text-emerald-400" />
+                        <span>{chunk.ext.toLowerCase() === "pdf" ? "PDF 열기" : "문서 열기"}</span>
                       </button>
                     ) : (
                       <button
@@ -246,14 +293,14 @@ export const PreviewList: React.FC<PreviewListProps> = ({
                     <button
                       onClick={(e) => handleCopyCode(e, chunk.id, chunk.content)}
                       className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors text-[11px]"
-                      title={isImage ? "이미지 파일 정보 복사" : "전체 코드 청크 복사"}
+                      title={category !== "code" ? "파일 내용/정보 복사" : "전체 코드 청크 복사"}
                     >
                       {copiedChunkId === chunk.id ? (
                         <Check className="w-3 h-3 text-emerald-400" />
                       ) : (
                         <Copy className="w-3 h-3" />
                       )}
-                      <span>{copiedChunkId === chunk.id ? "복사됨" : isImage ? "정보 복사" : "코드 복사"}</span>
+                      <span>{copiedChunkId === chunk.id ? "복사됨" : category !== "code" ? "정보 복사" : "코드 복사"}</span>
                     </button>
                   </div>
 
