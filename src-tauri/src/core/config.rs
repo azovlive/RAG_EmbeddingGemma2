@@ -47,7 +47,8 @@ pub fn get_default_base_dir() -> PathBuf {
         return dunce::canonicalize(&local_test_cur).unwrap_or(local_test_cur);
     }
 
-    PathBuf::from(r"C:\RAG_EG2")
+    // Default test base directory prior to production release
+    PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\RAG_EG2")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,20 +74,20 @@ pub struct IndexingConfig {
 impl Default for IndexingConfig {
     fn default() -> Self {
         let mut target_paths = Vec::new();
-        if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        // Default target directory specified for testing prior to production release
+        let test_target = PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target");
+        if test_target.exists() {
+            target_paths.push(TargetFolder {
+                name: "TestTarget".to_string(),
+                path: test_target,
+                enabled: true,
+            });
+        } else if let Ok(user_profile) = std::env::var("USERPROFILE") {
             let one_drive = PathBuf::from(&user_profile).join("OneDrive");
             if one_drive.exists() {
                 target_paths.push(TargetFolder {
                     name: "OneDrive".to_string(),
                     path: one_drive,
-                    enabled: true,
-                });
-            }
-            let icloud = PathBuf::from(&user_profile).join("iCloudDrive");
-            if icloud.exists() {
-                target_paths.push(TargetFolder {
-                    name: "iCloud".to_string(),
-                    path: icloud,
                     enabled: true,
                 });
             }
@@ -100,8 +101,8 @@ impl Default for IndexingConfig {
                 "target".to_string(),
                 "dist".to_string(),
                 "__pycache__".to_string(),
-                "$Recycle.Bin".to_string(),
-                "Temp".to_string(),
+                ".obsidian".to_string(),
+                ".trash".to_string(),
             ],
             skip_cloud_placeholders: true,
         }
@@ -206,7 +207,7 @@ impl Default for AppConfig {
                     name: "파이썬 소스코드".to_string(),
                     description: "Python 스크립트 및 주피터 노트북 파일 선별".to_string(),
                     icon: "FileCode".to_string(),
-                    paths: vec![],
+                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target\python_project")],
                     preset: "python".to_string(),
                     extensions: vec!["py".to_string(), "ipynb".to_string(), "pyi".to_string()],
                     enabled: true,
@@ -216,7 +217,7 @@ impl Default for AppConfig {
                     name: "C/C++ 소스코드".to_string(),
                     description: "C 및 C++ 헤더/소스 파일 선별".to_string(),
                     icon: "Cpu".to_string(),
-                    paths: vec![],
+                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target\cpp_project")],
                     preset: "cpp".to_string(),
                     extensions: vec!["cpp".to_string(), "hpp".to_string(), "c".to_string(), "h".to_string(), "cc".to_string()],
                     enabled: true,
@@ -226,7 +227,7 @@ impl Default for AppConfig {
                     name: "마크다운 문서/메모".to_string(),
                     description: "옵시디언 및 마크다운 지식 베이스".to_string(),
                     icon: "BookOpen".to_string(),
-                    paths: vec![],
+                    paths: vec![PathBuf::from(r"C:\Users\azovl\OneDrive\Antigravity\Project\RAG_EmbeddingGemma2\test\target")],
                     preset: "markdown".to_string(),
                     extensions: vec!["md".to_string(), "markdown".to_string()],
                     enabled: true,
