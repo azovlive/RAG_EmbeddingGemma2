@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::Result;
 use tokio::sync::mpsc;
+use serde::{Deserialize, Serialize};
 
 use super::config::AppConfig;
 use super::db::{DbChunk, VectorDatabase};
@@ -12,8 +14,6 @@ use super::code_chunker::CodeChunker;
 use super::extractor::TextExtractor;
 use super::pdf_parser::PdfParser;
 use super::resource_governor::ResourceGovernor;
-
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexProgress {
@@ -29,6 +29,8 @@ pub struct Indexer {
     pub db: Arc<VectorDatabase>,
     pub embedder: Arc<Embedder>,
     pub governor: Arc<ResourceGovernor>,
+    pub is_paused: Arc<AtomicBool>,
+    pub is_running: Arc<AtomicBool>,
 }
 
 impl Indexer {
@@ -43,10 +45,31 @@ impl Indexer {
             db,
             embedder,
             governor,
+            is_paused: Arc::new(AtomicBool::new(false)),
+            is_running: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    pub fn pause(&self) {
+        self.is_paused.store(true, Ordering::SeqCst);
+    }
+
+    pub fn resume(&self) {
+        self.is_paused.store(false, Ordering::SeqCst);
+    }
+
+    pub fn is_currently_paused(&self) -> bool {
+        self.is_paused.load(Ordering::SeqCst)
+    }
+
+    pub fn is_currently_running(&self) -> bool {
+        self.is_running.load(Ordering::SeqCst)
+    }
+
     pub async fn index_all(&self, progress_tx: Option<mpsc::Sender<IndexProgress>>) -> Result<()> {
+        self.is_running.store(true, Ordering::SeqCst);
+        self.is_paused.store(false, Ordering::SeqCst);
+
         let conf = self.config.read().await.clone();
         let mut all_files = Vec::new();
 
@@ -88,6 +111,20 @@ impl Indexer {
 
         // 2. Process files with Read-Only guarantee & Resource Governor
         for (idx, file_path) in all_files.into_iter().enumerate() {
+            // Check User Manual Pause
+            while self.is_paused.load(Ordering::SeqCst) {
+                if let Some(ref tx) = progress_tx {
+                    let _ = tx.send(IndexProgress {
+                        current_file: file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
+                        processed_files: idx,
+                        total_files: total,
+                        percent: if total > 0 { (idx as f32 / total as f32) * 100.0 } else { 100.0 },
+                        is_paused: true,
+                    }).await;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            }
+
             // Check Resource Governor
             let (_, _, should_pause) = self.governor.check_system().await;
             if should_pause {
@@ -115,6 +152,9 @@ impl Indexer {
                 }).await;
             }
         }
+
+        self.is_running.store(false, Ordering::SeqCst);
+        self.is_paused.store(false, Ordering::SeqCst);
 
         Ok(())
     }

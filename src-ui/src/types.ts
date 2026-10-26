@@ -81,3 +81,9 @@ export interface IndexProgress {
   percent: number;
   is_paused: boolean;
 }
+
+export interface IndexingState {
+  is_running: boolean;
+  is_paused: boolean;
+  total_chunks: number;
+}

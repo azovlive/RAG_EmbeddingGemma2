@@ -52,6 +52,15 @@ export const api = {
   triggerIndexing: (): Promise<void> =>
     invoke("trigger_indexing"),
 
+  pauseIndexing: (): Promise<void> =>
+    invoke("pause_indexing"),
+
+  resumeIndexing: (): Promise<void> =>
+    invoke("resume_indexing"),
+
+  getIndexingState: (): Promise<{ is_running: boolean; is_paused: boolean; total_chunks: number }> =>
+    invoke("get_indexing_state"),
+
   getIndexCount: (): Promise<number> =>
     invoke("get_index_count"),
 };

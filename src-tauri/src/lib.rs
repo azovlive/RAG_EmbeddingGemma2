@@ -104,6 +104,9 @@ pub fn run() {
             crate::commands::system_cmd::open_in_editor,
             crate::commands::system_cmd::exit_app,
             crate::commands::index_cmd::trigger_indexing,
+            crate::commands::index_cmd::pause_indexing,
+            crate::commands::index_cmd::resume_indexing,
+            crate::commands::index_cmd::get_indexing_state,
             crate::commands::index_cmd::get_index_count,
         ])
         .run(tauri::generate_context!())

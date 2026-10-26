@@ -1,14 +1,30 @@
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
+use serde::{Deserialize, Serialize};
 use crate::core::indexer::IndexProgress;
 use crate::AppState;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IndexingState {
+    pub is_running: bool,
+    pub is_paused: bool,
+    pub total_chunks: usize,
+}
 
 #[tauri::command]
 pub async fn trigger_indexing(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    if state.indexer.is_currently_running() {
+        if state.indexer.is_currently_paused() {
+            state.indexer.resume();
+            return Ok(());
+        }
+        return Ok(());
+    }
+
     let indexer = state.indexer.clone();
     let app_handle = app.clone();
 
@@ -32,6 +48,33 @@ pub async fn trigger_indexing(
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn pause_indexing(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.indexer.pause();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn resume_indexing(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.indexer.resume();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_indexing_state(
+    state: State<'_, Arc<AppState>>,
+) -> Result<IndexingState, String> {
+    Ok(IndexingState {
+        is_running: state.indexer.is_currently_running(),
+        is_paused: state.indexer.is_currently_paused(),
+        total_chunks: state.db.get_total_chunks().await,
+    })
 }
 
 #[tauri::command]
