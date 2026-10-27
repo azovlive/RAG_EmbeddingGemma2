@@ -49,6 +49,18 @@ impl VectorDatabase {
         }
     }
 
+    pub fn load_sync(&self) -> Result<()> {
+        let file = self.db_dir.join("chunks_store.json");
+        if file.exists() {
+            let data = std::fs::read_to_string(file)?;
+            let list: Vec<DbChunk> = serde_json::from_str(&data)?;
+            if let Ok(mut lock) = self.chunks.try_write() {
+                *lock = list;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn load(&self) -> Result<()> {
         let file = self.db_dir.join("chunks_store.json");
         if file.exists() {
@@ -71,8 +83,12 @@ impl VectorDatabase {
 
     pub async fn get_folder_stats(&self, prefix: &str) -> (usize, usize) {
         let lock = self.chunks.read().await;
-        let p = prefix.trim_end_matches('/').to_lowercase();
-        let prefix_with_slash = format!("{}/", p);
+        let p = prefix.replace('\\', "/").trim_end_matches('/').to_lowercase();
+        let prefix_with_slash = if p.is_empty() {
+            "/".to_string()
+        } else {
+            format!("{}/", p)
+        };
         let mut file_set = std::collections::HashSet::new();
         let mut chunk_count = 0;
 
@@ -121,10 +137,15 @@ impl VectorDatabase {
 
     pub async fn clear_folder(&self, folder_prefix: &str) -> Result<()> {
         let mut lock = self.chunks.write().await;
-        let prefix = folder_prefix.replace('\\', "/").to_lowercase();
+        let p = folder_prefix.replace('\\', "/").trim_end_matches('/').to_lowercase();
+        let prefix_with_slash = if p.is_empty() {
+            "/".to_string()
+        } else {
+            format!("{}/", p)
+        };
         lock.retain(|c| {
-            let p = c.file_path.replace('\\', "/").to_lowercase();
-            !p.starts_with(&prefix)
+            let cf = c.file_path.replace('\\', "/").to_lowercase();
+            !(cf.starts_with(&prefix_with_slash) || cf == p)
         });
         drop(lock);
         self.persist().await?;
@@ -154,7 +175,12 @@ impl VectorDatabase {
         for chunk in lock.iter() {
             // Check bundle path filter
             if !bundle_path_prefixes.is_empty() {
-                let matched = bundle_path_prefixes.iter().any(|prefix| chunk.file_path.starts_with(prefix));
+                let cf = chunk.file_path.replace('\\', "/").to_lowercase();
+                let matched = bundle_path_prefixes.iter().any(|prefix| {
+                    let p = prefix.replace('\\', "/").trim_end_matches('/').to_lowercase();
+                    let p_slash = if p.is_empty() { "/".to_string() } else { format!("{}/", p) };
+                    cf.starts_with(&p_slash) || cf == p
+                });
                 if !matched {
                     continue;
                 }
@@ -289,5 +315,102 @@ impl VectorDatabase {
         results.truncate(top_k);
 
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_folder_stats_windows_backslash_and_slash() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "eg2_db_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db = VectorDatabase::new(temp_dir.clone());
+
+        let chunks = vec![
+            DbChunk {
+                id: "1".to_string(),
+                file_path: "c:/users/test/project/main.py".to_string(),
+                display_path: r"C:\Users\test\project\main.py".to_string(),
+                file_name: "main.py".to_string(),
+                ext: "py".to_string(),
+                lang: "python".to_string(),
+                symbol: "main".to_string(),
+                start_line: 1,
+                end_line: 10,
+                chunk_index: 0,
+                content: "def main(): pass".to_string(),
+                file_hash: "abc".to_string(),
+                mtime: 100,
+                vector: vec![0.1; 4],
+            },
+            DbChunk {
+                id: "2".to_string(),
+                file_path: "c:/users/test/project/main.py".to_string(),
+                display_path: r"C:\Users\test\project\main.py".to_string(),
+                file_name: "main.py".to_string(),
+                ext: "py".to_string(),
+                lang: "python".to_string(),
+                symbol: "helper".to_string(),
+                start_line: 11,
+                end_line: 20,
+                chunk_index: 1,
+                content: "def helper(): pass".to_string(),
+                file_hash: "abc".to_string(),
+                mtime: 100,
+                vector: vec![0.2; 4],
+            },
+            DbChunk {
+                id: "3".to_string(),
+                file_path: "c:/users/test/project_other/other.py".to_string(),
+                display_path: r"C:\Users\test\project_other\other.py".to_string(),
+                file_name: "other.py".to_string(),
+                ext: "py".to_string(),
+                lang: "python".to_string(),
+                symbol: "other".to_string(),
+                start_line: 1,
+                end_line: 5,
+                chunk_index: 0,
+                content: "pass".to_string(),
+                file_hash: "def".to_string(),
+                mtime: 100,
+                vector: vec![0.3; 4],
+            },
+        ];
+
+        db.upsert_chunks_memory(chunks).await;
+
+        // 1. Windows backslash path must accurately match normalized forward-slash DB paths
+        let (files, chunk_cnt) = db.get_folder_stats(r"C:\Users\test\project").await;
+        assert_eq!(files, 1);
+        assert_eq!(chunk_cnt, 2);
+
+        // 2. Trailing backslash or slash must also match
+        let (files2, chunk_cnt2) = db.get_folder_stats(r"C:\Users\test\project\").await;
+        assert_eq!(files2, 1);
+        assert_eq!(chunk_cnt2, 2);
+
+        // 3. Drive root C:\ must match all 2 files (3 chunks)
+        let (files_root, chunks_root) = db.get_folder_stats(r"C:\").await;
+        assert_eq!(files_root, 2);
+        assert_eq!(chunks_root, 3);
+
+        // 4. clear_folder on C:\Users\test\project must NOT delete C:\Users\test\project_other
+        db.clear_folder(r"C:\Users\test\project").await.unwrap();
+        let (f_proj, c_proj) = db.get_folder_stats(r"C:\Users\test\project").await;
+        assert_eq!(f_proj, 0);
+        assert_eq!(c_proj, 0);
+
+        let (f_other, c_other) = db.get_folder_stats(r"C:\Users\test\project_other").await;
+        assert_eq!(f_other, 1);
+        assert_eq!(c_other, 1);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

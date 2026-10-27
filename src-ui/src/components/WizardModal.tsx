@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { AppConfig, DriveInfo, FolderAddInput, KnowledgeBundle, TargetFolderStatus, TargetProcessReport } from "../types";
+import { AppConfig, DriveInfo, FolderAddInput, IndexProgress, KnowledgeBundle, TargetFolderStatus, TargetProcessReport } from "../types";
 import { api } from "../api";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   X,
@@ -22,6 +23,7 @@ import {
   Zap,
   ChevronDown,
   ChevronUp,
+  RefreshCw,
 } from "lucide-react";
 
 interface WizardModalProps {
@@ -44,6 +46,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   const [multiPathInput, setMultiPathInput] = useState<string>("");
   const [processReport, setProcessReport] = useState<TargetProcessReport | null>(null);
   const [showAdvancedStorage, setShowAdvancedStorage] = useState<boolean>(false);
+  const [indexProgress, setIndexProgress] = useState<IndexProgress | null>(null);
 
   const [newBundleName, setNewBundleName] = useState("");
   const [newBundlePreset, setNewBundlePreset] = useState("python");
@@ -63,11 +66,62 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
-      api.getConfig().then(setConfig).catch(console.error);
+    if (!isOpen) return;
+
+    api.getConfig().then(setConfig).catch(console.error);
+    loadFolderStatuses();
+    loadDrives();
+
+    let unlistenProg: any;
+    let unlistenComp: any;
+    let unlistenErr: any;
+
+    try {
+      listen<IndexProgress>("index-progress", (event) => {
+        const p = event.payload;
+        if (p.stage === "complete" || (!p.is_running && p.stage !== "scanning" && p.stage !== "initializing" && p.stage !== "indexing")) {
+          setIndexProgress(null);
+          loadFolderStatuses();
+          loadDrives();
+        } else {
+          setIndexProgress(p);
+          loadFolderStatuses();
+        }
+      }).then((un) => (unlistenProg = un));
+
+      listen<number>("index-complete", () => {
+        setIndexProgress(null);
+        loadFolderStatuses();
+        loadDrives();
+      }).then((un) => (unlistenComp = un));
+
+      listen<string>("index-error", () => {
+        setIndexProgress(null);
+        loadFolderStatuses();
+        loadDrives();
+      }).then((un) => (unlistenErr = un));
+    } catch {}
+
+    // Active polling while modal is open so status transitions in real time without lag
+    const pollInterval = setInterval(() => {
       loadFolderStatuses();
-      loadDrives();
-    }
+      api.getIndexingProgress()
+        .then((p) => {
+          if (p && p.is_running && p.stage !== "complete" && p.stage !== "idle") {
+            setIndexProgress(p);
+          } else {
+            setIndexProgress(null);
+          }
+        })
+        .catch(() => {});
+    }, 600);
+
+    return () => {
+      clearInterval(pollInterval);
+      unlistenProg?.();
+      unlistenComp?.();
+      unlistenErr?.();
+    };
   }, [isOpen]);
 
   if (!isOpen || !config) return null;
@@ -204,7 +258,18 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
   const handleSaveConfig = async () => {
     try {
-      await api.saveConfig(config);
+      // Ensure latest target_paths from backend are preserved before saving config
+      const latestBackendConfig = await api.getConfig();
+      const mergedConfig: AppConfig = {
+        ...config,
+        indexing: {
+          ...config.indexing,
+          target_paths: latestBackendConfig.indexing.target_paths,
+        },
+        bundles: latestBackendConfig.bundles,
+      };
+      await api.saveConfig(mergedConfig);
+      setConfig(mergedConfig);
       setSavedSuccess(true);
       setTimeout(() => {
         setSavedSuccess(false);
@@ -553,8 +618,13 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                               {/* Indicator In Front */}
                               {isCurrentIndexing && (
                                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30 animate-pulse">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></span>
-                                  <span>색인 진행 중...</span>
+                                  <RefreshCw className="w-3 h-3 text-sky-400 animate-spin" />
+                                  <span>
+                                    색인 진행 중...
+                                    {indexProgress && indexProgress.total_files > 0
+                                      ? ` (${indexProgress.processed_files}/${indexProgress.total_files} 파일 · ${indexProgress.percent.toFixed(0)}%)`
+                                      : ""}
+                                  </span>
                                 </span>
                               )}
                               {isCompleted && (

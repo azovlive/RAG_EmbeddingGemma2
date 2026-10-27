@@ -1,12 +1,13 @@
 use std::sync::Arc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::State;
 use serde::{Deserialize, Serialize};
 use crate::core::config::AppConfig;
 use crate::core::path_helper::{
+    check_path_relation,
     get_available_drives as sys_get_available_drives,
     validate_and_apply_targets,
-    DriveInfo, FolderAddInput, TargetProcessReport,
+    DriveInfo, FolderAddInput, PathRelation, TargetProcessReport,
 };
 use crate::AppState;
 
@@ -65,19 +66,16 @@ pub async fn get_target_folders_status(
             || norm_str == "/"
             || (norm_str.len() == 2 && norm_str.chars().nth(1) == Some(':'));
 
-        let prefix_with_slash = if norm_str.ends_with('/') {
-            norm_str.clone()
-        } else {
-            format!("{}/", norm_str)
-        };
-
         let (file_count, chunk_count) = state.db.get_folder_stats(&path_str).await;
 
         let is_folder_indexing = if is_running {
             match &active_folder {
                 Some(active) => {
-                    let active_norm = active.replace('\\', "/").to_lowercase();
-                    active_norm == norm_str || active_norm.starts_with(&prefix_with_slash)
+                    let active_path = Path::new(active);
+                    matches!(
+                        check_path_relation(active_path, &tf.path),
+                        PathRelation::Identical | PathRelation::IsSubfolder | PathRelation::IsParent
+                    )
                 }
                 None => true, // All folders are indexing
             }
@@ -138,8 +136,12 @@ pub async fn remove_target_folder(
 ) -> Result<(), String> {
     let path = PathBuf::from(&path_str);
     let mut conf = state.config.write().await;
-    conf.indexing.target_paths.retain(|t| t.path != path);
+    conf.indexing
+        .target_paths
+        .retain(|t| check_path_relation(&t.path, &path) != PathRelation::Identical);
     conf.save().map_err(|e| e.to_string())?;
+    drop(conf);
+    let _ = state.db.clear_folder(&path_str).await;
     Ok(())
 }
 

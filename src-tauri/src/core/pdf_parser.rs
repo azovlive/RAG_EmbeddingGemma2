@@ -9,13 +9,14 @@ impl PdfParser {
         // Enforce Read-Only access: never modify PDF
         let bytes = std::fs::read(path)?;
         
-        // Try pdf-extract first as pure safe Rust, or pdfium if available
-        let text = match pdf_extract::extract_text_from_mem(&bytes) {
-            Ok(t) => t,
-            Err(_) => {
-                // If pure extract fails, try basic string recovery
-                String::from_utf8_lossy(&bytes).to_string()
-            }
+        // Try pdf-extract safely (catch any internal parser panic on malformed PDFs)
+        let extracted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pdf_extract::extract_text_from_mem(&bytes)
+        }));
+
+        let text = match extracted {
+            Ok(Ok(t)) => t,
+            _ => String::new(),
         };
 
         let mut chunks = Vec::new();

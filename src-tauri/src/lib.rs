@@ -32,6 +32,7 @@ pub fn run() {
 
     let db_dir = config_data.storage.lancedb_dir.clone();
     let db = Arc::new(VectorDatabase::new(db_dir));
+    let _ = db.load_sync();
 
     let embedder = Arc::new(Embedder::new(
         &config_data.inference.device,
@@ -50,8 +51,6 @@ pub fn run() {
         embedder.clone(),
         governor.clone(),
     ));
-
-    let db_for_load = db.clone();
 
     let state = Arc::new(AppState {
         config: config.clone(),
@@ -81,10 +80,6 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-            let db_async = db_for_load.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = db_async.load().await;
-            });
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,28 @@ pub async fn trigger_indexing(
         tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
     }
 
+    // Set running state and active folder immediately BEFORE returning to caller
+    // so get_target_folders_status() immediately sees the running state without race conditions
+    *state.indexer.active_target_folder.write().await = target_folder.clone();
+    state.indexer.is_running.store(true, Ordering::SeqCst);
+    state.indexer.is_paused.store(false, Ordering::SeqCst);
+    state.indexer.is_cancelled.store(false, Ordering::SeqCst);
+
+    let initial_prog = IndexProgress {
+        stage: if force_reindex { "initializing".to_string() } else { "scanning".to_string() },
+        current_file: "색인 대상 파일 탐색 중...".to_string(),
+        processed_files: 0,
+        total_files: 0,
+        percent: 0.0,
+        is_paused: false,
+        is_running: true,
+    };
+    {
+        let mut lock = state.indexer.current_progress.write().await;
+        *lock = initial_prog.clone();
+    }
+    let _ = app.emit("index-progress", &initial_prog);
+
     let indexer = state.indexer.clone();
     let app_handle = app.clone();
 
@@ -41,13 +64,17 @@ pub async fn trigger_indexing(
         let (tx, mut rx) = mpsc::channel::<IndexProgress>(100);
 
         let app_emit = app_handle.clone();
-        tokio::spawn(async move {
+        let emit_task = tokio::spawn(async move {
             while let Some(prog) = rx.recv().await {
                 let _ = app_emit.emit("index-progress", &prog);
             }
         });
 
-        match indexer.index_all(target_folder, force_reindex, Some(tx)).await {
+        let res = indexer.index_all(target_folder, force_reindex, Some(tx)).await;
+        indexer.clear_running_state().await;
+        let _ = emit_task.await;
+
+        match res {
             Ok(total_processed) => {
                 tracing::info!("Indexing finished successfully. Total: {}", total_processed);
                 let _ = app_handle.emit("index-complete", total_processed);

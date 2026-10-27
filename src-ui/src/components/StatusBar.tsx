@@ -302,9 +302,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
         // Refresh folders list
         await loadFolders();
 
-        // 2) Trigger indexing on the added folder
-        for (const p of paths) {
-          await handleReindexFolder(p);
+        // 2) Trigger indexing: if 1 folder added, index that folder; if multiple, index all targets
+        if (report.added_paths.length === 1) {
+          await handleReindexFolder(report.added_paths[0]);
+        } else if (paths.length === 1) {
+          await handleReindexFolder(paths[0]);
+        } else {
+          await handleReindexAll();
         }
       }
     } catch (e) {

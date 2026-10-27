@@ -105,6 +105,12 @@ impl Indexer {
         self.active_target_folder.read().await.clone()
     }
 
+    pub async fn clear_running_state(&self) {
+        self.is_running.store(false, Ordering::SeqCst);
+        self.is_paused.store(false, Ordering::SeqCst);
+        *self.active_target_folder.write().await = None;
+    }
+
     pub async fn update_progress(
         &self,
         tx: &Option<mpsc::Sender<IndexProgress>>,
@@ -227,6 +233,7 @@ impl Indexer {
         } else {
             for path in candidate_files {
                 if self.is_cancelled.load(Ordering::SeqCst) {
+                    self.clear_running_state().await;
                     return Ok(0);
                 }
                 let normalized = normalize_path_for_query(&path);
@@ -246,6 +253,7 @@ impl Indexer {
 
         // If 0 files need indexing, finish cleanly and inform UI immediately
         if total == 0 {
+            self.clear_running_state().await;
             self.update_progress(
                 &progress_tx,
                 IndexProgress {
@@ -280,6 +288,7 @@ impl Indexer {
             if self.is_cancelled.load(Ordering::SeqCst) {
                 tracing::info!("Indexing cancelled by user at file {}/{}", idx, total);
                 let _ = self.db.persist().await;
+                self.clear_running_state().await;
                 self.update_progress(
                     &progress_tx,
                     IndexProgress {
@@ -299,6 +308,7 @@ impl Indexer {
             while self.is_paused.load(Ordering::SeqCst) {
                 if self.is_cancelled.load(Ordering::SeqCst) {
                     let _ = self.db.persist().await;
+                    self.clear_running_state().await;
                     return Ok(idx);
                 }
                 self.update_progress(
@@ -346,6 +356,9 @@ impl Indexer {
 
         // Final persist of all accumulated chunks
         let _ = self.db.persist().await;
+
+        // Clear running state BEFORE emitting "complete" progress so UI status queries immediately see completed state
+        self.clear_running_state().await;
 
         self.update_progress(
             &progress_tx,
@@ -496,18 +509,18 @@ impl Indexer {
                 lang: "document".to_string(),
             }]
         } else if ext == "pdf" {
-            PdfParser::parse_pdf(path)?
+            PdfParser::parse_pdf(path).unwrap_or_default()
         } else {
             let content_str = String::from_utf8_lossy(&content_bytes);
             match ext.as_str() {
                 "py" | "ipynb" | "cpp" | "hpp" | "c" | "h" | "cc" | "rs" => {
-                    CodeChunker::chunk_file(path, &content_str)?
+                    CodeChunker::chunk_file(path, &content_str).unwrap_or_default()
                 }
                 "md" | "markdown" | "txt" | "csv" | "log" | "rtf" | "json" | "toml" | "yaml" | "yml" | "xml" => {
-                    TextExtractor::extract_chunks(&content_str, &ext)?
+                    TextExtractor::extract_chunks(&content_str, &ext).unwrap_or_default()
                 }
                 _ => {
-                    CodeChunker::chunk_generic(&content_str, &ext)?
+                    CodeChunker::chunk_generic(&content_str, &ext).unwrap_or_default()
                 }
             }
         };
