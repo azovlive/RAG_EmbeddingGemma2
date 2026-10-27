@@ -8,6 +8,7 @@ import { FileSidebar } from "./components/FileSidebar";
 import { PreviewList } from "./components/PreviewList";
 import { SheetInspector } from "./components/SheetInspector";
 import { WizardModal } from "./components/WizardModal";
+import { AboutModal } from "./components/AboutModal";
 import { StatusBar } from "./components/StatusBar";
 
 export const App: React.FC = () => {
@@ -21,6 +22,7 @@ export const App: React.FC = () => {
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
   const [previewLines, setPreviewLines] = useState<number>(7);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
 
   // Load bundles and check first run on mount
@@ -41,6 +43,7 @@ export const App: React.FC = () => {
     const handleGlobalKeys = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (selectedResult) setSelectedResult(null);
+        else if (isAboutOpen) setIsAboutOpen(false);
         else if (isSettingsOpen) setIsSettingsOpen(false);
       }
       if (e.ctrlKey && e.key === ",") {
@@ -55,7 +58,7 @@ export const App: React.FC = () => {
 
     window.addEventListener("keydown", handleGlobalKeys);
     return () => window.removeEventListener("keydown", handleGlobalKeys);
-  }, [selectedResult, isSettingsOpen]);
+  }, [selectedResult, isSettingsOpen, isAboutOpen]);
 
   const handleSearch = async (overrideBundleId?: string) => {
     const q = query.trim();
@@ -124,7 +127,10 @@ export const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950/90 text-slate-100 font-sans select-none">
       {/* Frameless Mica TitleBar */}
-      <TitleBar onOpenSettings={() => setIsSettingsOpen(true)} />
+      <TitleBar
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenAbout={() => setIsAboutOpen(true)}
+      />
 
       {/* Main App Container */}
       <div className="flex-1 flex flex-col px-4 pt-2.5 pb-2 gap-2.5 overflow-hidden">
@@ -193,6 +199,12 @@ export const App: React.FC = () => {
           api.listBundles().then(setBundles);
         }}
         isInitialSetup={isInitialSetup}
+      />
+
+      {/* Program Info & Help Modal */}
+      <AboutModal
+        isOpen={isAboutOpen}
+        onClose={() => setIsAboutOpen(false)}
       />
     </div>
   );

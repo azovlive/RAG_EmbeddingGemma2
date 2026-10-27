@@ -6,15 +6,18 @@ import {
   Square,
   X,
   Layers,
-  Cpu
+  Cpu,
+  HelpCircle
 } from "lucide-react";
 import { api } from "../api";
+import appIcon from "../assets/App_icon.png";
 
 interface TitleBarProps {
   onOpenSettings: () => void;
+  onOpenAbout: () => void;
 }
 
-export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings, onOpenAbout }) => {
   const [appWindow, setAppWindow] = useState<any>(null);
   const [preferNpu, setPreferNpu] = useState<boolean>(true);
 
@@ -83,15 +86,30 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
       onDoubleClick={handleMaximize}
       className="h-10 w-full flex items-center justify-between px-3 select-none border-b border-white/5 bg-slate-900/80 backdrop-blur-md z-50 text-slate-300 text-xs cursor-default"
     >
-      {/* Left: App Logo & Name */}
+      {/* Left: App Logo, Name, Version & Help ('?') Button */}
       <div data-tauri-drag-region className="flex items-center gap-2 font-medium tracking-wide shrink-0">
-        <div className="w-5 h-5 rounded-md bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400 font-bold text-[10px]">
-          EG2
-        </div>
+        <img
+          src={appIcon}
+          alt="eg2-rag icon"
+          className="w-5 h-5 rounded-md object-contain border border-white/10 shadow-sm"
+        />
         <span className="font-semibold text-slate-200">eg2-rag</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-400/30 font-mono font-medium">
+          v0.1.0
+        </span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
           Gemma2 256d
         </span>
+
+        {/* '?' Help / About Button */}
+        <button
+          onClick={onOpenAbout}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="p-1 rounded-md text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-colors ml-0.5 flex items-center justify-center"
+          title="eg2-rag 정보 및 도움말 (?)"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Center Drag Region */}
