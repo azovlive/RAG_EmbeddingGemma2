@@ -44,6 +44,16 @@ export interface TargetFolder {
   enabled: boolean;
 }
 
+export interface TargetFolderStatus {
+  name: string;
+  path: string;
+  is_drive: boolean;
+  status: "completed" | "indexing" | "pending";
+  chunk_count: number;
+  file_count: number;
+  enabled: boolean;
+}
+
 export interface AppConfig {
   storage: {
     base_dir: string;

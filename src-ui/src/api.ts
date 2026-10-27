@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AppConfig, DbChunk, DriveInfo, FolderAddInput, ImageDataResponse, IndexProgress, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus, TargetProcessReport } from "./types";
+import { AppConfig, DbChunk, DriveInfo, FolderAddInput, ImageDataResponse, IndexProgress, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus, TargetFolderStatus, TargetProcessReport } from "./types";
 
 const imageCache = new Map<string, Promise<ImageDataResponse>>();
 
@@ -36,6 +36,9 @@ export const api = {
 
   getAvailableDrives: (): Promise<DriveInfo[]> =>
     invoke("get_available_drives"),
+
+  getTargetFoldersStatus: (): Promise<TargetFolderStatus[]> =>
+    invoke("get_target_folders_status"),
 
   addTargetFolders: (inputs: FolderAddInput[]): Promise<TargetProcessReport> =>
     invoke("add_target_folders", { inputs }),

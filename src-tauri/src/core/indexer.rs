@@ -29,11 +29,14 @@ pub struct IndexProgress {
     pub is_running: bool,
 }
 
-struct IndexRunGuard(Arc<AtomicBool>, Arc<AtomicBool>);
+struct IndexRunGuard(Arc<AtomicBool>, Arc<AtomicBool>, Arc<tokio::sync::RwLock<Option<String>>>);
 impl Drop for IndexRunGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::SeqCst);
         self.1.store(false, Ordering::SeqCst);
+        if let Ok(mut lock) = self.2.try_write() {
+            *lock = None;
+        }
     }
 }
 
@@ -45,6 +48,7 @@ pub struct Indexer {
     pub is_paused: Arc<AtomicBool>,
     pub is_running: Arc<AtomicBool>,
     pub is_cancelled: Arc<AtomicBool>,
+    pub active_target_folder: Arc<tokio::sync::RwLock<Option<String>>>,
     pub current_progress: Arc<tokio::sync::RwLock<IndexProgress>>,
 }
 
@@ -63,6 +67,7 @@ impl Indexer {
             is_paused: Arc::new(AtomicBool::new(false)),
             is_running: Arc::new(AtomicBool::new(false)),
             is_cancelled: Arc::new(AtomicBool::new(false)),
+            active_target_folder: Arc::new(tokio::sync::RwLock::new(None)),
             current_progress: Arc::new(tokio::sync::RwLock::new(IndexProgress {
                 stage: "idle".to_string(),
                 current_file: "".to_string(),
@@ -96,6 +101,10 @@ impl Indexer {
         self.is_running.load(Ordering::SeqCst)
     }
 
+    pub async fn get_active_folder(&self) -> Option<String> {
+        self.active_target_folder.read().await.clone()
+    }
+
     pub async fn update_progress(
         &self,
         tx: &Option<mpsc::Sender<IndexProgress>>,
@@ -116,7 +125,12 @@ impl Indexer {
         force: bool,
         progress_tx: Option<mpsc::Sender<IndexProgress>>,
     ) -> Result<usize> {
-        let _guard = IndexRunGuard(self.is_running.clone(), self.is_paused.clone());
+        let _guard = IndexRunGuard(
+            self.is_running.clone(),
+            self.is_paused.clone(),
+            self.active_target_folder.clone(),
+        );
+        *self.active_target_folder.write().await = target_folder.clone();
         self.is_running.store(true, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
         self.is_cancelled.store(false, Ordering::SeqCst);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { SystemStatus, IndexProgress, TargetFolder } from "../types";
+import { SystemStatus, IndexProgress, TargetFolderStatus } from "../types";
 import { api } from "../api";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Folder,
   FolderPlus,
+  HardDrive,
   Zap,
   CheckCircle2,
   Cpu
@@ -35,7 +36,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
   const [statusNote, setStatusNote] = useState<string | null>(null);
-  const [targetFolders, setTargetFolders] = useState<TargetFolder[]>([]);
+  const [targetFolders, setTargetFolders] = useState<TargetFolderStatus[]>([]);
   const [isReindexMenuOpen, setIsReindexMenuOpen] = useState<boolean>(false);
   const [preferNpu, setPreferNpu] = useState<boolean>(true);
 
@@ -46,11 +47,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
   };
 
   const loadFolders = () => {
-    api.getConfig()
-      .then((conf) => {
-        setTargetFolders(conf.indexing?.target_paths || []);
+    api.getTargetFoldersStatus()
+      .then((statuses) => {
+        setTargetFolders(statuses);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("대상 폴더 상태 조회 실패:", err);
+      });
   };
 
   useEffect(() => {
@@ -271,18 +274,35 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     }
   };
 
-  // Pick Custom Folder from Explorer & Re-index (Supports Multiple Selection)
+  // Pick Custom Folder from Explorer, Add to Targets & Re-index
   const handlePickAndReindex = async () => {
     setIsReindexMenuOpen(false);
     try {
       const selected = await open({
         directory: true,
         multiple: true,
-        title: "다시 색인할 폴더 또는 드라이브 선택 (복수 선택 가능)",
+        title: "색인 대상에 추가 및 다시 색인할 폴더 선택 (복수 선택 가능)",
       });
 
       if (selected) {
         const paths = Array.isArray(selected) ? selected : [selected];
+        if (paths.length === 0) return;
+
+        // 1) Add to target paths so it is officially saved into config!
+        const inputs = paths.map((p) => ({ path: p }));
+        const report = await api.addTargetFolders(inputs);
+
+        // Notify if there are any relationship messages (e.g. subfolder skipped or parent consolidated)
+        if (report.messages.length > 0) {
+          const firstMsg = report.messages[0];
+          setStatusNote(`[${firstMsg.title}] ${firstMsg.message}`);
+          setTimeout(() => setStatusNote(null), 5000);
+        }
+
+        // Refresh folders list
+        await loadFolders();
+
+        // 2) Trigger indexing on the added folder
         for (const p of paths) {
           await handleReindexFolder(p);
         }
@@ -400,27 +420,74 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
                 특정 폴더만 다시 색인
               </div>
 
-              {/* Option 2: Configured Target Folders */}
-              <div className="max-h-36 overflow-y-auto space-y-0.5">
+              {/* Option 2: Configured Target Folders with Real-time Status Indicator */}
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
                 {targetFolders.length === 0 ? (
                   <div className="text-[10px] text-slate-500 px-2 py-1">
                     등록된 대상 폴더가 없습니다.
                   </div>
                 ) : (
-                  targetFolders.map((tf, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleReindexFolder(tf.path)}
-                      className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-colors flex items-center gap-2 truncate group"
-                      title={tf.path}
-                    >
-                      <Folder className="w-3 h-3 text-sky-400/80 group-hover:text-sky-300 shrink-0" />
-                      <div className="truncate flex-1">
-                        <span className="font-medium text-[11px] text-slate-200">{tf.name || "대상 폴더"}</span>
-                        <span className="text-[10px] text-slate-400 block truncate font-mono">{tf.path}</span>
-                      </div>
-                    </button>
-                  ))
+                  targetFolders.map((tf, idx) => {
+                    const isCompleted = tf.status === "completed";
+                    const isCurrentIndexing = tf.status === "indexing";
+                    const isPending = tf.status === "pending";
+
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleReindexFolder(tf.path)}
+                        className="w-full text-left p-1.5 rounded-md hover:bg-white/10 text-slate-300 hover:text-white transition-colors flex items-start gap-2 group border border-white/5"
+                        title={tf.path}
+                      >
+                        {/* Status Indicator Icon & Dot */}
+                        <div className="mt-0.5 shrink-0 flex items-center gap-1">
+                          {isCurrentIndexing ? (
+                            <span className="flex h-2 w-2 relative" title="색인 진행 중">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                            </span>
+                          ) : isCompleted ? (
+                            <span className="inline-flex rounded-full h-2 w-2 bg-emerald-400" title="색인 완료" />
+                          ) : (
+                            <span className="inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse" title="색인 필요 (미색인)" />
+                          )}
+                          {tf.is_drive ? (
+                            <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+                          ) : (
+                            <Folder className="w-3.5 h-3.5 text-sky-400" />
+                          )}
+                        </div>
+
+                        {/* Folder Info with Indicator Badge */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-[11px] text-slate-200">
+                              {tf.name || (tf.is_drive ? "로컬 드라이브" : "대상 폴더")}
+                            </span>
+                            {/* Status Indicator Badge */}
+                            {isCurrentIndexing && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                진행중
+                              </span>
+                            )}
+                            {isCompleted && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                색인 완료 ({tf.file_count}개 파일 · {tf.chunk_count}청크)
+                              </span>
+                            )}
+                            {isPending && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                색인 필요 (미색인)
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 block truncate font-mono mt-0.5">
+                            {tf.path}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
               </div>
 

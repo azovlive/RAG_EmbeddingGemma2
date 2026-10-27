@@ -69,6 +69,23 @@ impl VectorDatabase {
         Ok(())
     }
 
+    pub async fn get_folder_stats(&self, prefix: &str) -> (usize, usize) {
+        let lock = self.chunks.read().await;
+        let p = prefix.trim_end_matches('/').to_lowercase();
+        let prefix_with_slash = format!("{}/", p);
+        let mut file_set = std::collections::HashSet::new();
+        let mut chunk_count = 0;
+
+        for c in lock.iter() {
+            let cf = c.file_path.replace('\\', "/").to_lowercase();
+            if cf.starts_with(&prefix_with_slash) || cf == p {
+                chunk_count += 1;
+                file_set.insert(cf);
+            }
+        }
+        (file_set.len(), chunk_count)
+    }
+
     pub async fn upsert_chunks(&self, new_chunks: Vec<DbChunk>) -> Result<()> {
         self.upsert_chunks_memory(new_chunks).await;
         self.persist().await?;
