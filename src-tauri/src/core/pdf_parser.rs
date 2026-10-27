@@ -8,10 +8,13 @@ impl PdfParser {
     pub fn parse_pdf(path: &Path) -> Result<Vec<CodeChunk>> {
         // Enforce Read-Only access: never modify PDF
         let bytes = std::fs::read(path)?;
-        
+        Self::parse_pdf_bytes(&bytes)
+    }
+
+    pub fn parse_pdf_bytes(bytes: &[u8]) -> Result<Vec<CodeChunk>> {
         // Try pdf-extract safely (catch any internal parser panic on malformed PDFs)
         let extracted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            pdf_extract::extract_text_from_mem(&bytes)
+            pdf_extract::extract_text_from_mem(bytes)
         }));
 
         let text = match extracted {

@@ -34,6 +34,7 @@ tree-sitter-rust = "0.21"
 pdf-extract = "0.7"
 reqwest = { version = "0.12", features = ["stream"] }
 sha2 = "0.10"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.52", features = [

@@ -24,6 +24,9 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
+  Archive,
+  FileText,
+  Sliders,
 } from "lucide-react";
 
 interface WizardModalProps {
@@ -52,6 +55,11 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   const [newBundlePreset, setNewBundlePreset] = useState("python");
   const [newBundleExts, setNewBundleExts] = useState("py, ipynb");
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Indexing restrictions & memory optimization state
+  const [newBinaryExt, setNewBinaryExt] = useState("");
+  const [newZipExt, setNewZipExt] = useState("");
+  const [newExcludePattern, setNewExcludePattern] = useState("");
 
   const loadFolderStatuses = () => {
     api.getTargetFoldersStatus()
@@ -256,6 +264,87 @@ export const WizardModal: React.FC<WizardModalProps> = ({
     }
   };
 
+  const handleAddBinaryExt = () => {
+    const trimmed = newBinaryExt.trim().toLowerCase().replace(/^\./, "");
+    if (!trimmed || !config) return;
+    const current = config.indexing.binary_extensions || [];
+    if (!current.includes(trimmed)) {
+      setConfig({
+        ...config,
+        indexing: {
+          ...config.indexing,
+          binary_extensions: [...current, trimmed],
+        },
+      });
+    }
+    setNewBinaryExt("");
+  };
+
+  const handleRemoveBinaryExt = (ext: string) => {
+    if (!config) return;
+    setConfig({
+      ...config,
+      indexing: {
+        ...config.indexing,
+        binary_extensions: (config.indexing.binary_extensions || []).filter((e) => e !== ext),
+      },
+    });
+  };
+
+  const handleAddZipExt = () => {
+    const trimmed = newZipExt.trim().toLowerCase().replace(/^\./, "");
+    if (!trimmed || !config) return;
+    const current = config.indexing.zip_allowed_extensions || [];
+    if (!current.includes(trimmed)) {
+      setConfig({
+        ...config,
+        indexing: {
+          ...config.indexing,
+          zip_allowed_extensions: [...current, trimmed],
+        },
+      });
+    }
+    setNewZipExt("");
+  };
+
+  const handleRemoveZipExt = (ext: string) => {
+    if (!config) return;
+    setConfig({
+      ...config,
+      indexing: {
+        ...config.indexing,
+        zip_allowed_extensions: (config.indexing.zip_allowed_extensions || []).filter((e) => e !== ext),
+      },
+    });
+  };
+
+  const handleAddExcludePattern = () => {
+    const trimmed = newExcludePattern.trim();
+    if (!trimmed || !config) return;
+    const current = config.indexing.exclude_patterns || [];
+    if (!current.includes(trimmed)) {
+      setConfig({
+        ...config,
+        indexing: {
+          ...config.indexing,
+          exclude_patterns: [...current, trimmed],
+        },
+      });
+    }
+    setNewExcludePattern("");
+  };
+
+  const handleRemoveExcludePattern = (pat: string) => {
+    if (!config) return;
+    setConfig({
+      ...config,
+      indexing: {
+        ...config.indexing,
+        exclude_patterns: (config.indexing.exclude_patterns || []).filter((p) => p !== pat),
+      },
+    });
+  };
+
   const handleSaveConfig = async () => {
     try {
       // Ensure latest target_paths from backend are preserved before saving config
@@ -349,8 +438,8 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Cpu className="w-3.5 h-3.5" />
-            <span>자원 조절기 (Resource Governor)</span>
+            <Sliders className="w-3.5 h-3.5" />
+            <span>메모리 관리 및 자원 조절</span>
           </button>
         </div>
 
@@ -815,85 +904,381 @@ export const WizardModal: React.FC<WizardModalProps> = ({
           )}
 
           {activeTab === "governor" && (
-            <div className="space-y-4">
-              <p className="text-slate-400">
-                색인 작업 시 시스템 CPU 및 RAM 자원이 여유 있을 때만 진행하도록 조절합니다.
-              </p>
-
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-slate-300 font-medium">최대 허용 CPU 점유율</span>
-                  <span className="text-sky-400 font-mono font-semibold">
-                    {config.resource_governor.max_cpu_percent}%
+            <div className="space-y-5">
+              {/* SECTION 1: Document & File Size Limit (문서/대용량 파일 크기 제한) */}
+              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-100 flex items-center gap-1.5 text-xs">
+                    <FileText className="w-4 h-4 text-sky-400" />
+                    <span>문서 및 대용량 파일 색인 크기 제한 (기본값: 100MB)</span>
+                  </span>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-semibold border border-sky-400/30">
+                    최대 {config.indexing.max_file_size_mb || 100} MB
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="30"
-                  max="95"
-                  value={config.resource_governor.max_cpu_percent}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      resource_governor: {
-                        ...config.resource_governor,
-                        max_cpu_percent: Number(e.target.value),
-                      },
-                    })
-                  }
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  시스템 CPU 점유율이 이 수치를 초과하면 색인이 일시 중단됩니다.
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  대용량 문서나 데이터 파일의 과다 메모리 점유를 방지합니다. 지정된 크기를 초과하는 파일은 전체 본문 대신 <strong>파일명, 경로 및 서두 미리보기 메타데이터만 1개 청크로 안전하게 색인</strong>되어 메모리 폭증 없이 검색 가능합니다.
                 </p>
-              </div>
 
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-slate-300 font-medium">최대 허용 RAM 점유율</span>
-                  <span className="text-sky-400 font-mono font-semibold">
-                    {config.resource_governor.max_ram_percent}%
-                  </span>
+                {/* Preset Buttons + Custom Input */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  {[50, 100, 200, 300, 500].map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() =>
+                        setConfig({
+                          ...config,
+                          indexing: {
+                            ...config.indexing,
+                            max_file_size_mb: size,
+                          },
+                        })
+                      }
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                        (config.indexing.max_file_size_mb || 100) === size
+                          ? "bg-sky-600 text-white border-sky-400 font-semibold shadow-sm"
+                          : "bg-slate-800 text-slate-300 border-white/5 hover:bg-slate-700"
+                      }`}
+                    >
+                      {size}MB {size === 100 ? "(기본값)" : ""}
+                    </button>
+                  ))}
+                  <div className="flex items-center gap-1 ml-auto">
+                    <span className="text-[11px] text-slate-400">직접 입력:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="2000"
+                      value={config.indexing.max_file_size_mb || 100}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          indexing: {
+                            ...config.indexing,
+                            max_file_size_mb: Math.max(1, Number(e.target.value)),
+                          },
+                        })
+                      }
+                      className="w-16 px-2 py-1 rounded bg-slate-950 border border-white/10 text-slate-100 font-mono text-xs text-right outline-none focus:border-sky-400"
+                    />
+                    <span className="text-[11px] text-slate-400 font-mono">MB</span>
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min="50"
-                  max="95"
-                  value={config.resource_governor.max_ram_percent}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      resource_governor: {
-                        ...config.resource_governor,
-                        max_ram_percent: Number(e.target.value),
-                      },
-                    })
-                  }
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  시스템 메모리 점유율이 이 수치를 초과하면 색인이 일시 중단됩니다.
-                </p>
               </div>
 
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+              {/* SECTION 2: Installer & Binary Executable Guardrail (설치/실행 프로그램 본문 청킹 건너뛰기) */}
+              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.indexing.skip_binary_executables ?? true}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          indexing: {
+                            ...config.indexing,
+                            skip_binary_executables: e.target.checked,
+                          },
+                        })
+                      }
+                      className="rounded bg-slate-900 border-white/10 text-sky-500 focus:ring-0"
+                    />
+                    <span className="font-semibold text-slate-100 text-xs">
+                      프로그램 설치 및 실행 바이너리 파일 본문 청킹 건너뛰기 (권장)
+                    </span>
+                  </label>
+                  <span className="text-[10px] text-emerald-400 font-medium">메모리 보호 ON</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  수백 MB~수 GB 크기의 인스톨러나 실행 파일(`.exe`, `.msi` 등)을 일반 텍스트로 오인해 수만 개의 가비지 청크를 생성하지 않도록 차단하고, <strong>파일명/크기/경로 메타데이터로 즉시 등록</strong>합니다.
+                </p>
+
+                {/* Binary Extensions Chip List & Add/Remove */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    본문 청킹 건너뛰기 대상 확장자 목록 ({config.indexing.binary_extensions?.length || 0}개):
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 rounded-lg bg-slate-950/60 border border-white/5">
+                    {(config.indexing.binary_extensions || []).map((ext) => (
+                      <span
+                        key={ext}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono border border-white/5 hover:border-rose-400/40"
+                      >
+                        <span>.{ext}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveBinaryExt(ext)}
+                          className="hover:text-rose-400 text-slate-500 ml-0.5"
+                          title="확장자 제거"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Add Binary Ext Input */}
+                  <div className="flex gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      placeholder="새 바이너리 확장자 (예: pkg, rom)"
+                      value={newBinaryExt}
+                      onChange={(e) => setNewBinaryExt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddBinaryExt();
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 rounded-lg bg-slate-950 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-sky-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddBinaryExt}
+                      className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-sky-600 hover:text-white text-slate-300 text-xs font-medium border border-white/10 transition-colors"
+                    >
+                      + 확장자 추가
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: ZIP Archive Inspection (ZIP 파일 내부 소형 문서/이미지 선별 색인) */}
+              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.indexing.enable_zip_indexing ?? true}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          indexing: {
+                            ...config.indexing,
+                            enable_zip_indexing: e.target.checked,
+                          },
+                        })
+                      }
+                      className="rounded bg-slate-900 border-white/10 text-sky-500 focus:ring-0"
+                    />
+                    <span className="font-semibold text-slate-100 flex items-center gap-1.5 text-xs">
+                      <Archive className="w-3.5 h-3.5 text-sky-400" />
+                      <span>ZIP 압축 파일 내부 소형 문서 및 이미지 선별 색인 (권장)</span>
+                    </span>
+                  </label>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  ZIP 전체를 메모리에 풀지 않고, 지정한 크기(기본 10MB) 이하의 작은 문서/이미지만 스트리밍으로 안전하게 선별 색인합니다. 대형 바이너리는 자동으로 제외됩니다.
+                </p>
+
+                {/* ZIP Entry Size Preset */}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[11px] text-slate-300 font-medium">ZIP 내부 파일 최대 크기:</span>
+                  {[5, 10, 20, 30].map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() =>
+                        setConfig({
+                          ...config,
+                          indexing: {
+                            ...config.indexing,
+                            max_zip_entry_size_mb: sz,
+                          },
+                        })
+                      }
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-colors ${
+                        (config.indexing.max_zip_entry_size_mb || 10) === sz
+                          ? "bg-sky-600 text-white border-sky-400 font-semibold"
+                          : "bg-slate-800 text-slate-400 border-white/5 hover:bg-slate-700"
+                      }`}
+                    >
+                      {sz}MB {sz === 10 ? "(기본값)" : ""}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ZIP Allowed Extensions Chip List & Add/Remove */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[11px] text-slate-400 font-medium">
+                    ZIP 내부 색인 허용 확장자 목록 ({config.indexing.zip_allowed_extensions?.length || 0}개):
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 rounded-lg bg-slate-950/60 border border-white/5">
+                    {(config.indexing.zip_allowed_extensions || []).map((ext) => (
+                      <span
+                        key={ext}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono border border-white/5 hover:border-rose-400/40"
+                      >
+                        <span>.{ext}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveZipExt(ext)}
+                          className="hover:text-rose-400 text-slate-500 ml-0.5"
+                          title="확장자 제거"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Add ZIP Allowed Ext Input */}
+                  <div className="flex gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      placeholder="새 허용 확장자 (예: rtf, tex)"
+                      value={newZipExt}
+                      onChange={(e) => setNewZipExt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddZipExt();
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 rounded-lg bg-slate-950 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-sky-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddZipExt}
+                      className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-sky-600 hover:text-white text-slate-300 text-xs font-medium border border-white/10 transition-colors"
+                    >
+                      + 확장자 추가
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: Exclude Patterns / Extensions (색인 완전 제외 패턴 및 확장자) */}
+              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5 space-y-3">
+                <span className="font-semibold text-slate-100 text-xs block">
+                  색인 완전 제외 폴더명 및 확장자 패턴 ({config.indexing.exclude_patterns?.length || 0}개)
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  아래 명칭을 포함하는 폴더나 파일은 색인 파일 탐색(WalkDir) 단계에서 완전히 건너뜁니다.
+                </p>
+                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto p-1.5 rounded-lg bg-slate-950/60 border border-white/5">
+                  {(config.indexing.exclude_patterns || []).map((pat) => (
+                    <span
+                      key={pat}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono border border-white/5"
+                    >
+                      <span>{pat}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveExcludePattern(pat)}
+                        className="hover:text-rose-400 text-slate-500 ml-0.5"
+                        title="패턴 제거"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-1.5">
                   <input
-                    type="checkbox"
-                    checked={config.resource_governor.enabled}
+                    type="text"
+                    placeholder="제외할 폴더명 또는 확장자 (예: node_modules, .tmp, build)"
+                    value={newExcludePattern}
+                    onChange={(e) => setNewExcludePattern(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddExcludePattern();
+                      }
+                    }}
+                    className="flex-1 px-2.5 py-1 rounded-lg bg-slate-950 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-sky-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddExcludePattern}
+                    className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-sky-600 hover:text-white text-slate-300 text-xs font-medium border border-white/10 transition-colors"
+                  >
+                    + 패턴 추가
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION 5: CPU & RAM Governor Sliders */}
+              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5 space-y-4">
+                <span className="font-semibold text-slate-100 text-xs flex items-center gap-1.5">
+                  <Cpu className="w-4 h-4 text-sky-400" />
+                  <span>실시간 시스템 자원 조절기 (Resource Governor)</span>
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  PC 사용에 지장을 주지 않도록 시스템 CPU 및 RAM 점유율이 한도 이하일 때만 색인을 진행합니다.
+                </p>
+
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-300 font-medium">최대 허용 CPU 점유율</span>
+                    <span className="text-sky-400 font-mono font-semibold">
+                      {config.resource_governor.max_cpu_percent}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="30"
+                    max="95"
+                    value={config.resource_governor.max_cpu_percent}
                     onChange={(e) =>
                       setConfig({
                         ...config,
                         resource_governor: {
                           ...config.resource_governor,
-                          enabled: e.target.checked,
+                          max_cpu_percent: Number(e.target.value),
                         },
                       })
                     }
-                    className="rounded bg-slate-900 border-white/10 text-sky-500 focus:ring-0"
+                    className="w-full accent-sky-400 cursor-pointer"
                   />
-                  <span className="text-slate-300">자원 조절기 활성화 (권장)</span>
-                </label>
+                </div>
+
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-300 font-medium">최대 허용 RAM 점유율</span>
+                    <span className="text-sky-400 font-mono font-semibold">
+                      {config.resource_governor.max_ram_percent}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="95"
+                    value={config.resource_governor.max_ram_percent}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        resource_governor: {
+                          ...config.resource_governor,
+                          max_ram_percent: Number(e.target.value),
+                        },
+                      })
+                    }
+                    className="w-full accent-sky-400 cursor-pointer"
+                  />
+                </div>
+
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.resource_governor.enabled}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          resource_governor: {
+                            ...config.resource_governor,
+                            enabled: e.target.checked,
+                          },
+                        })
+                      }
+                      className="rounded bg-slate-900 border-white/10 text-sky-500 focus:ring-0"
+                    />
+                    <span className="text-slate-300 font-medium">자원 조절기 활성화 (권장)</span>
+                  </label>
+                </div>
               </div>
             </div>
           )}

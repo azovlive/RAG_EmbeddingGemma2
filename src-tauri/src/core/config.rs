@@ -100,12 +100,54 @@ fn default_true() -> bool {
     true
 }
 
+fn default_max_file_size_mb() -> usize {
+    100
+}
+
+fn default_max_zip_entry_size_mb() -> usize {
+    10
+}
+
+fn default_binary_extensions() -> Vec<String> {
+    vec![
+        "exe".to_string(), "msi".to_string(), "dll".to_string(), "sys".to_string(),
+        "bin".to_string(), "iso".to_string(), "dmg".to_string(), "pkg".to_string(),
+        "cab".to_string(), "vmdk".to_string(), "vhdx".to_string(), "so".to_string(),
+        "dylib".to_string(), "apk".to_string(), "appx".to_string(), "msix".to_string(),
+    ]
+}
+
+fn default_zip_allowed_extensions() -> Vec<String> {
+    vec![
+        "md".to_string(), "txt".to_string(), "pdf".to_string(), "doc".to_string(),
+        "docx".to_string(), "ppt".to_string(), "pptx".to_string(), "xls".to_string(),
+        "xlsx".to_string(), "hwp".to_string(), "hwpx".to_string(), "py".to_string(),
+        "ipynb".to_string(), "cpp".to_string(), "c".to_string(), "h".to_string(),
+        "rs".to_string(), "json".to_string(), "toml".to_string(), "yaml".to_string(),
+        "csv".to_string(), "log".to_string(), "png".to_string(), "jpg".to_string(),
+        "jpeg".to_string(), "gif".to_string(), "webp".to_string(), "bmp".to_string(),
+        "svg".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingConfig {
     pub target_paths: Vec<TargetFolder>,
     pub exclude_patterns: Vec<String>,
     #[serde(default = "default_true")]
     pub skip_cloud_placeholders: bool,
+    #[serde(default = "default_max_file_size_mb")]
+    pub max_file_size_mb: usize,
+    #[serde(default = "default_true")]
+    pub skip_binary_executables: bool,
+    #[serde(default = "default_binary_extensions")]
+    pub binary_extensions: Vec<String>,
+    #[serde(default = "default_true")]
+    pub enable_zip_indexing: bool,
+    #[serde(default = "default_max_zip_entry_size_mb")]
+    pub max_zip_entry_size_mb: usize,
+    #[serde(default = "default_zip_allowed_extensions")]
+    pub zip_allowed_extensions: Vec<String>,
 }
 
 impl Default for IndexingConfig {
@@ -175,6 +217,12 @@ impl Default for IndexingConfig {
                 ".trash".to_string(),
             ],
             skip_cloud_placeholders: true,
+            max_file_size_mb: default_max_file_size_mb(),
+            skip_binary_executables: true,
+            binary_extensions: default_binary_extensions(),
+            enable_zip_indexing: true,
+            max_zip_entry_size_mb: default_max_zip_entry_size_mb(),
+            zip_allowed_extensions: default_zip_allowed_extensions(),
         }
     }
 }

@@ -157,6 +157,11 @@ impl VectorDatabase {
         lock.iter().find(|c| c.file_path == normalized_path).map(|c| c.file_hash.clone())
     }
 
+    pub async fn get_existing_file_meta(&self, normalized_path: &str) -> Option<(String, i64)> {
+        let lock = self.chunks.read().await;
+        lock.iter().find(|c| c.file_path == normalized_path).map(|c| (c.file_hash.clone(), c.mtime))
+    }
+
     pub async fn get_total_chunks(&self) -> usize {
         let lock = self.chunks.read().await;
         lock.len()

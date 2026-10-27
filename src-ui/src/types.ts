@@ -64,6 +64,12 @@ export interface AppConfig {
     target_paths: TargetFolder[];
     exclude_patterns: string[];
     skip_cloud_placeholders: boolean;
+    max_file_size_mb: number;
+    skip_binary_executables: boolean;
+    binary_extensions: string[];
+    enable_zip_indexing: boolean;
+    max_zip_entry_size_mb: number;
+    zip_allowed_extensions: string[];
   };
   bundles: KnowledgeBundle[];
   inference: {

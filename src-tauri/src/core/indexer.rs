@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::io::Read;
 use anyhow::Result;
 use tokio::sync::mpsc;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,7 @@ use super::cloud_filter::is_cloud_placeholder;
 use super::code_chunker::CodeChunker;
 use super::extractor::TextExtractor;
 use super::pdf_parser::PdfParser;
+use super::zip_parser::ZipParser;
 use super::resource_governor::ResourceGovernor;
 use super::path_helper::prune_subdirectories;
 
@@ -237,11 +239,37 @@ impl Indexer {
                     return Ok(0);
                 }
                 let normalized = normalize_path_for_query(&path);
-                if let Some(existing_hash) = self.db.get_existing_hash(&normalized).await {
-                    if let Ok(content_bytes) = std::fs::read(&path) {
-                        let file_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&content_bytes));
-                        if existing_hash == file_hash {
-                            continue; // File already indexed and up-to-date
+                if let Some((existing_hash, existing_mtime)) = self.db.get_existing_file_meta(&normalized).await {
+                    if let Ok(meta) = std::fs::metadata(&path) {
+                        let current_mtime = meta.modified()
+                            .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                            .unwrap_or(0);
+                        // Fast path: if modification timestamp matches, skip immediately with 0 bytes read
+                        if current_mtime > 0 && current_mtime == existing_mtime {
+                            continue;
+                        }
+
+                        // Fallback: Compute streaming hash without loading the entire file into RAM
+                        if let Ok(mut f) = std::fs::File::open(&path) {
+                            let mut buffer = [0u8; 65536];
+                            let mut hasher = xxhash_rust::xxh3::Xxh3::new();
+                            let mut read_failed = false;
+                            loop {
+                                match f.read(&mut buffer) {
+                                    Ok(0) => break,
+                                    Ok(n) => hasher.update(&buffer[..n]),
+                                    Err(_) => {
+                                        read_failed = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !read_failed {
+                                let file_hash = format!("{:016x}", hasher.digest());
+                                if existing_hash == file_hash {
+                                    continue;
+                                }
+                            }
                         }
                     }
                 }
@@ -386,14 +414,223 @@ impl Indexer {
             return Ok(());
         }
 
-        // Shared Read-Only: Open with read-only permission without locks
+        let metadata = match std::fs::metadata(path) {
+            Ok(m) => m,
+            Err(_) => return Ok(()),
+        };
+
+        let file_len = metadata.len();
+        let mtime = metadata.modified()
+            .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+            .unwrap_or(0);
+
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let display_path = path.to_string_lossy().to_string();
+        let normalized = normalize_path_for_query(path);
+
+        let conf = self.config.read().await.clone();
+
+        // Check if excluded extension
+        if conf.indexing.exclude_patterns.iter().any(|p| p.eq_ignore_ascii_case(&ext)) {
+            return Ok(());
+        }
+
+        // Format human-readable file size helper
+        let formatted_size = if file_len < 1024 {
+            format!("{} B", file_len)
+        } else if file_len < 1024 * 1024 {
+            format!("{:.1} KB", file_len as f64 / 1024.0)
+        } else if file_len < 1024 * 1024 * 1024 {
+            format!("{:.1} MB", file_len as f64 / (1024.0 * 1024.0))
+        } else {
+            format!("{:.2} GB", file_len as f64 / (1024.0 * 1024.0 * 1024.0))
+        };
+
+        // 1. Guardrail for Installer / Binary Executable files
+        let is_binary_executable = conf.indexing.skip_binary_executables
+            && conf.indexing.binary_extensions.iter().any(|b| b.eq_ignore_ascii_case(&ext));
+
+        if is_binary_executable {
+            let file_hash = format!("{:016x}_{}", xxhash_rust::xxh3::xxh3_64(format!("{normalized}_{file_len}_{mtime}").as_bytes()), file_len);
+            if !force {
+                if let Some(existing) = self.db.get_existing_hash(&normalized).await {
+                    if existing == file_hash {
+                        return Ok(());
+                    }
+                }
+            }
+
+            let symbol = format!("[실행/설치 파일] {file_name}");
+            let content = format!(
+                "[실행 및 설치 프로그램: {file_name}]\n형식: {} 실행 파일\n크기: {formatted_size}\n경로: {display_path}",
+                ext.to_uppercase()
+            );
+
+            let id = format!("{:016x}_0", xxhash_rust::xxh3::xxh3_64(format!("{normalized}_bin").as_bytes()));
+            let embed_input = Embedder::format_embedding_input(&file_name, &symbol, &content);
+            let vector = self.embedder.embed(&embed_input).await?;
+
+            let db_chunk = DbChunk {
+                id,
+                file_path: normalized,
+                display_path,
+                file_name,
+                ext: ext.clone(),
+                lang: "binary".to_string(),
+                symbol,
+                start_line: 1,
+                end_line: 1,
+                chunk_index: 0,
+                content,
+                file_hash,
+                mtime,
+                vector,
+            };
+            self.db.upsert_chunks_memory(vec![db_chunk]).await;
+            return Ok(());
+        }
+
+        // 2. Guardrail for ZIP archives (inspect documents/images under max_zip_entry_size_mb)
+        if ext == "zip" && conf.indexing.enable_zip_indexing {
+            let zip_hash = format!("{:016x}_{}", xxhash_rust::xxh3::xxh3_64(format!("{normalized}_{file_len}_{mtime}").as_bytes()), file_len);
+            if !force {
+                if let Some(existing) = self.db.get_existing_hash(&normalized).await {
+                    if existing == zip_hash {
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Extract small documents & images within limits
+            let entries = ZipParser::parse_zip(
+                path,
+                conf.indexing.max_zip_entry_size_mb,
+                &conf.indexing.zip_allowed_extensions,
+            ).unwrap_or_default();
+
+            let mut db_chunks = Vec::new();
+
+            // Archive master summary chunk
+            let zip_summary_symbol = format!("[ZIP 압축 파일] {file_name}");
+            let zip_summary_content = format!(
+                "[ZIP 압축 파일: {file_name}]\n크기: {formatted_size}\n포함 문서/이미지: {}개 항목\n경로: {display_path}",
+                entries.len()
+            );
+            let embed_input = Embedder::format_embedding_input(&file_name, &zip_summary_symbol, &zip_summary_content);
+            if let Ok(vector) = self.embedder.embed(&embed_input).await {
+                db_chunks.push(DbChunk {
+                    id: format!("{:016x}_zip_root", xxhash_rust::xxh3::xxh3_64(normalized.as_bytes())),
+                    file_path: normalized.clone(),
+                    display_path: display_path.clone(),
+                    file_name: file_name.clone(),
+                    ext: "zip".to_string(),
+                    lang: "archive".to_string(),
+                    symbol: zip_summary_symbol,
+                    start_line: 1,
+                    end_line: 1,
+                    chunk_index: 0,
+                    content: zip_summary_content,
+                    file_hash: zip_hash.clone(),
+                    mtime,
+                    vector,
+                });
+            }
+
+            // Embed entries
+            for entry in entries {
+                let entry_norm = format!("{}::{}", normalized, entry.internal_path);
+                let entry_display = format!("{}::{}", display_path, entry.internal_path);
+                for (chunk_idx, c) in entry.chunks.into_iter().enumerate() {
+                    let id = format!("{:016x}_{}", xxhash_rust::xxh3::xxh3_64(format!("{entry_norm}_{chunk_idx}").as_bytes()), chunk_idx);
+                    let embed_input = Embedder::format_embedding_input(&entry.file_name, &c.symbol, &c.content);
+                    if let Ok(vector) = self.embedder.embed(&embed_input).await {
+                        db_chunks.push(DbChunk {
+                            id,
+                            file_path: entry_norm.clone(),
+                            display_path: entry_display.clone(),
+                            file_name: format!("{} ({file_name})", entry.file_name),
+                            ext: entry.ext.clone(),
+                            lang: c.lang,
+                            symbol: c.symbol,
+                            start_line: c.start_line,
+                            end_line: c.end_line,
+                            chunk_index: chunk_idx as u32,
+                            content: c.content,
+                            file_hash: zip_hash.clone(),
+                            mtime,
+                            vector,
+                        });
+                    }
+                }
+            }
+
+            self.db.upsert_chunks_memory(db_chunks).await;
+            return Ok(());
+        }
+
+        // 3. Guardrail for Large Files exceeding max_file_size_mb (Default: 100MB)
+        let max_bytes = (conf.indexing.max_file_size_mb as u64) * 1024 * 1024;
+        if file_len > max_bytes {
+            let file_hash = format!("{:016x}_{}", xxhash_rust::xxh3::xxh3_64(format!("{normalized}_{file_len}_{mtime}").as_bytes()), file_len);
+            if !force {
+                if let Some(existing) = self.db.get_existing_hash(&normalized).await {
+                    if existing == file_hash {
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Read only first 32KB preview snippet without loading gigabytes into RAM
+            let mut preview_snippet = String::new();
+            if let Ok(mut f) = std::fs::File::open(path) {
+                let mut buf = vec![0u8; 32768];
+                if let Ok(n) = f.read(&mut buf) {
+                    preview_snippet = String::from_utf8_lossy(&buf[..n])
+                        .chars()
+                        .take(1000)
+                        .collect();
+                }
+            }
+
+            let symbol = format!("[대용량 파일] {file_name}");
+            let content = format!(
+                "[대용량 파일/문서: {file_name}]\n형식: {}\n크기: {formatted_size} (설정 한도 {}MB 초과로 메타데이터 및 서두 미리보기만 색인됨)\n경로: {display_path}\n서두 미리보기:\n{preview_snippet}",
+                ext.to_uppercase(),
+                conf.indexing.max_file_size_mb
+            );
+
+            let id = format!("{:016x}_large", xxhash_rust::xxh3::xxh3_64(format!("{normalized}_large").as_bytes()));
+            let embed_input = Embedder::format_embedding_input(&file_name, &symbol, &content);
+            let vector = self.embedder.embed(&embed_input).await?;
+
+            let db_chunk = DbChunk {
+                id,
+                file_path: normalized,
+                display_path,
+                file_name,
+                ext,
+                lang: "document".to_string(),
+                symbol,
+                start_line: 1,
+                end_line: 1,
+                chunk_index: 0,
+                content,
+                file_hash,
+                mtime,
+                vector,
+            };
+            self.db.upsert_chunks_memory(vec![db_chunk]).await;
+            return Ok(());
+        }
+
+        // 4. Standard File Processing (within size limit <= 100MB)
         let content_bytes = match std::fs::read(path) {
             Ok(b) => b,
             Err(_) => return Ok(()), // Gracefully skip inaccessible or locked files
         };
 
         let file_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&content_bytes));
-        let normalized = normalize_path_for_query(path);
 
         // Check if hash matches existing record (unless force is true)
         if !force {
@@ -403,14 +640,6 @@ impl Indexer {
                 }
             }
         }
-
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-        let display_path = path.to_string_lossy().to_string();
-        let mtime = std::fs::metadata(path)
-            .and_then(|m| m.modified())
-            .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
-            .unwrap_or(0);
 
         let is_image = matches!(
             ext.as_str(),
