@@ -1,7 +1,12 @@
 use std::sync::Arc;
 use std::path::PathBuf;
 use tauri::State;
-use crate::core::config::{AppConfig, TargetFolder};
+use crate::core::config::AppConfig;
+use crate::core::path_helper::{
+    get_available_drives as sys_get_available_drives,
+    validate_and_apply_targets,
+    DriveInfo, FolderAddInput, TargetProcessReport,
+};
 use crate::AppState;
 
 #[tauri::command]
@@ -24,26 +29,35 @@ pub async fn save_app_config(
 }
 
 #[tauri::command]
+pub async fn get_available_drives(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<DriveInfo>, String> {
+    let conf = state.config.read().await;
+    Ok(sys_get_available_drives(&conf.indexing.target_paths))
+}
+
+#[tauri::command]
+pub async fn add_target_folders(
+    state: State<'_, Arc<AppState>>,
+    inputs: Vec<FolderAddInput>,
+) -> Result<TargetProcessReport, String> {
+    let mut conf = state.config.write().await;
+    let report = validate_and_apply_targets(&mut conf.indexing.target_paths, inputs);
+    conf.save().map_err(|e| e.to_string())?;
+    Ok(report)
+}
+
+#[tauri::command]
 pub async fn add_target_folder(
     state: State<'_, Arc<AppState>>,
     name: String,
     path_str: String,
-) -> Result<(), String> {
-    let path = PathBuf::from(&path_str);
-    if !path.exists() {
-        return Err(format!("경로가 존재하지 않습니다: {}", path_str));
-    }
-
-    let mut conf = state.config.write().await;
-    if !conf.indexing.target_paths.iter().any(|t| t.path == path) {
-        conf.indexing.target_paths.push(TargetFolder {
-            name,
-            path,
-            enabled: true,
-        });
-        conf.save().map_err(|e| e.to_string())?;
-    }
-    Ok(())
+) -> Result<TargetProcessReport, String> {
+    let input = FolderAddInput {
+        name: Some(name),
+        path: path_str,
+    };
+    add_target_folders(state, vec![input]).await
 }
 
 #[tauri::command]

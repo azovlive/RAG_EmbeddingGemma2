@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AppConfig, DbChunk, ImageDataResponse, IndexProgress, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus } from "./types";
+import { AppConfig, DbChunk, DriveInfo, FolderAddInput, ImageDataResponse, IndexProgress, KnowledgeBundle, SearchResult, SimilarFileResult, SystemStatus, TargetProcessReport } from "./types";
 
 const imageCache = new Map<string, Promise<ImageDataResponse>>();
 
@@ -34,7 +34,13 @@ export const api = {
   saveConfig: (newConfig: AppConfig): Promise<void> =>
     invoke("save_app_config", { newConfig }),
 
-  addTargetFolder: (name: string, pathStr: string): Promise<void> =>
+  getAvailableDrives: (): Promise<DriveInfo[]> =>
+    invoke("get_available_drives"),
+
+  addTargetFolders: (inputs: FolderAddInput[]): Promise<TargetProcessReport> =>
+    invoke("add_target_folders", { inputs }),
+
+  addTargetFolder: (name: string, pathStr: string): Promise<TargetProcessReport> =>
     invoke("add_target_folder", { name, pathStr }),
 
   removeTargetFolder: (pathStr: string): Promise<void> =>

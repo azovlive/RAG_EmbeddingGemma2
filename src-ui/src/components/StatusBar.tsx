@@ -271,18 +271,21 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onIndexComplete }) => {
     }
   };
 
-  // Pick Custom Folder from Explorer & Re-index
+  // Pick Custom Folder from Explorer & Re-index (Supports Multiple Selection)
   const handlePickAndReindex = async () => {
     setIsReindexMenuOpen(false);
     try {
       const selected = await open({
         directory: true,
-        multiple: false,
-        title: "다시 색인할 폴더 선택",
+        multiple: true,
+        title: "다시 색인할 폴더 또는 드라이브 선택 (복수 선택 가능)",
       });
 
-      if (selected && typeof selected === "string") {
-        await handleReindexFolder(selected);
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        for (const p of paths) {
+          await handleReindexFolder(p);
+        }
       }
     } catch (e) {
       console.error("Folder pick error:", e);

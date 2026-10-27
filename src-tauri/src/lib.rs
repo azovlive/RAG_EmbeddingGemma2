@@ -105,6 +105,8 @@ pub fn run() {
             crate::commands::config_cmd::get_app_config,
             crate::commands::config_cmd::save_app_config,
             crate::commands::config_cmd::add_target_folder,
+            crate::commands::config_cmd::add_target_folders,
+            crate::commands::config_cmd::get_available_drives,
             crate::commands::config_cmd::remove_target_folder,
             crate::commands::config_cmd::check_first_run,
             crate::commands::system_cmd::get_system_status,

@@ -128,3 +128,38 @@ export const getFileCategory = (ext?: string): FileCategory => {
   if (isDocumentFile(ext)) return "document";
   return "code";
 };
+
+export interface DriveInfo {
+  mount_point: string;
+  name: string;
+  total_space_gb: number;
+  available_space_gb: number;
+  file_system: string;
+  is_already_targeted: boolean;
+  covering_target_path: string | null;
+}
+
+export interface FolderAddInput {
+  name?: string;
+  path: string;
+}
+
+export type MessageSeverity = "Info" | "Warning" | "Success" | "Error";
+
+export interface PathProcessMessage {
+  path: string;
+  title: string;
+  message: string;
+  severity: MessageSeverity;
+  related_paths: string[];
+}
+
+export interface TargetProcessReport {
+  success: boolean;
+  added_paths: string[];
+  removed_subfolders: string[];
+  skipped_subfolders: string[];
+  skipped_duplicates: string[];
+  messages: PathProcessMessage[];
+  current_targets: TargetFolder[];
+}

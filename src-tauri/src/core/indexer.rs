@@ -14,6 +14,7 @@ use super::code_chunker::CodeChunker;
 use super::extractor::TextExtractor;
 use super::pdf_parser::PdfParser;
 use super::resource_governor::ResourceGovernor;
+use super::path_helper::prune_subdirectories;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexProgress {
@@ -163,12 +164,13 @@ impl Indexer {
         let search_dirs: Vec<std::path::PathBuf> = if let Some(ref folder) = target_folder {
             vec![std::path::PathBuf::from(folder)]
         } else {
-            conf.indexing
+            let targets: Vec<std::path::PathBuf> = conf.indexing
                 .target_paths
                 .iter()
                 .filter(|t| t.enabled && t.path.exists())
                 .map(|t| t.path.clone())
-                .collect()
+                .collect();
+            prune_subdirectories(targets)
         };
 
         for dir in search_dirs {

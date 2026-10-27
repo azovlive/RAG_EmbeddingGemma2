@@ -11,3 +11,4 @@ pub mod indexer;
 pub mod daemon_ipc;
 pub mod tray_service;
 pub mod npu_backend;
+pub mod path_helper;
